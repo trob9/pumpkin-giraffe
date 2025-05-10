@@ -1,0 +1,22 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+/bin/
+/build/
+
+# Ebiten/audio caches
+*.wav.cache
+
+# Go modules
+/go.sum
+/go.mod
+
+# Editor & OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
