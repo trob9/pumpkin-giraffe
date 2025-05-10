@@ -2,6 +2,7 @@ package game
 
 import (
 	"bytes"
+	"embed"
 	"image"
 	_ "image/png"
 	"io/fs"
@@ -30,40 +31,35 @@ const (
 
 type Player struct {
 	// movement
-	X, Y      float64
-	VelX      float64
-	VelY      float64
-	Width     float64
-	Height    float64
-	OnGround  bool
-	stepTimer int
-
-	// double-jump timer
+	X, Y            float64
+	VelX, VelY      float64
+	Width, Height   float64
+	OnGround        bool
+	stepTimer       int
 	framesSinceJump int
 
 	// pumpkin count
 	Pumpkins int
 
 	// animation resources
-	walkR []*ebiten.Image
-	walkL []*ebiten.Image
-	idleR []*ebiten.Image
-	idleL []*ebiten.Image
-	jumpR *ebiten.Image
-	jumpL *ebiten.Image
+	walkR, walkL []*ebiten.Image
+	idleR, idleL []*ebiten.Image
+	jumpR, jumpL *ebiten.Image
+	interactR    *ebiten.Image
+	interactL    *ebiten.Image
 
 	// animation state
-	frameIndex  int
-	walkTimer   int
-	walkDelay   int
-	idleIndex   int
-	idleTimer   int
-	idleDelay   int
-	facingRight bool
-	// interactables
-	interactR   *ebiten.Image
-	interactL   *ebiten.Image
-	interacting bool
+	frameIndex, walkTimer, walkDelay int
+	idleIndex, idleTimer, idleDelay  int
+	facingRight                      bool
+
+	// interaction callbacks & state
+	interacting     bool
+	onInteract      func(msg string)
+	onPumpkinSpawn  func()
+	onPumpkinRedrop func()
+
+	prevUse bool
 }
 
 var (
@@ -100,9 +96,14 @@ func loadImage(fsys fs.FS, path string) *ebiten.Image {
 	}
 	return ebiten.NewImageFromImage(img)
 }
-func NewPlayer(fsys fs.FS) *Player {
+func NewPlayer(
+	assets embed.FS,
+	onInteract func(string),
+	onPumpkinSpawn func(),
+	onPumpkinRedrop func(),
+) *Player {
 	loadSheet := func(path string, frames int) []*ebiten.Image {
-		data, err := fs.ReadFile(fsys, path)
+		data, err := assets.ReadFile(path) // ← read from your embed.FS
 		if err != nil {
 			panic(err)
 		}
@@ -124,11 +125,23 @@ func NewPlayer(fsys fs.FS) *Player {
 	idleR := loadSheet(spriteDir+"player_idle_right.png", idleFrames)
 	idleL := loadSheet(spriteDir+"player_idle_left.png", idleFrames)
 
+	loadImage := func(path string) *ebiten.Image {
+		data, err := assets.ReadFile(path)
+		if err != nil {
+			panic(err)
+		}
+		img, _, err := image.Decode(bytes.NewReader(data))
+		if err != nil {
+			panic(err)
+		}
+		return ebiten.NewImageFromImage(img)
+	}
+
 	// single-frame jumps
-	jr := loadImage(fsys, spriteDir+"player_jump_right.png")
-	jl := loadImage(fsys, spriteDir+"player_jump_left.png")
-	interactR := loadImage(fsys, spriteDir+"player_interact_right.png")
-	interactL := loadImage(fsys, spriteDir+"player_interact_left.png")
+	jr := loadImage(spriteDir + "player_jump_right.png")
+	jl := loadImage(spriteDir + "player_jump_left.png")
+	interactR := loadImage(spriteDir + "player_interact_right.png")
+	interactL := loadImage(spriteDir + "player_interact_left.png")
 
 	walkDelay := 60 / walkFPS
 	idleDelay := (60 / idleFPS) * 15
@@ -150,11 +163,15 @@ func NewPlayer(fsys fs.FS) *Player {
 		interactR: interactR,
 		interactL: interactL,
 
-		walkDelay:   walkDelay,
-		walkTimer:   walkDelay,
-		idleDelay:   idleDelay,
-		idleTimer:   idleDelay,
-		facingRight: true,
+		walkDelay:       walkDelay,
+		walkTimer:       walkDelay,
+		idleDelay:       idleDelay,
+		idleTimer:       idleDelay,
+		facingRight:     true,
+		onInteract:      onInteract,
+		onPumpkinSpawn:  onPumpkinSpawn,
+		onPumpkinRedrop: onPumpkinRedrop,
+		prevUse:         false,
 	}
 }
 
@@ -177,6 +194,9 @@ func (p *Player) Update(
 	deathSnd *audio.Player,
 	stepSnds map[int]*audio.Player,
 	landingSnd *audio.Player,
+	monsterDeathSnd *audio.Player,
+	pumpkinSnd *audio.Player, // SOUND DEPENDENCY (ADD MORE SOUND PARAMETERS TO ACCEPT IF YOU'RE ADDING MORE SOUND)
+	pumpkinMissed bool,
 ) {
 	p.framesSinceJump++
 	ts := float64(TileSize)
@@ -211,11 +231,31 @@ func (p *Player) Update(
 		p.X = ScreenWidth - p.Width
 	}
 
-	// at the top of your Player.Update, before movement:
-	if ebiten.IsKeyPressed(ebiten.KeyE) {
-		ts := float64(TileSize)
+	// PUMPKINS START HERE - PUMPKINS START HERE - PUMPKINS START HERE - PUMPKINS START HERE - PUMPKINS START HERE - PUMPKINS START HERE - PUMPKINS START HERE
+	// --- INTERACT LOGIC & POSE ---
+	pressed := ebiten.IsKeyPressed(ebiten.KeyE)
+	nowUse := pressed && !p.prevUse
+	p.prevUse = pressed
 
-		// pick the tile beside you
+	// Do we show the interact sprite?  Yes if E is down and there's a barrel beside us:
+	{
+		ts := float64(TileSize)
+		ty := int((p.Y + p.Height/2) / ts)
+		var tx int
+		if p.facingRight {
+			tx = int((p.X + p.Width + 1) / ts)
+		} else {
+			tx = int((p.X - 1) / ts)
+		}
+		barrelBeside := ty >= 0 && ty < len(Levels[CurrentLevel].Tiles) &&
+			tx >= 0 && tx < len(Levels[CurrentLevel].Tiles[0]) &&
+			Levels[CurrentLevel].Tiles[ty][tx] == 11
+		p.interacting = pressed && barrelBeside
+	}
+
+	// Only on the rising edge do we inspect above‐tile and spawn/message:
+	if nowUse {
+		ts := float64(TileSize)
 		ty := int((p.Y + p.Height/2) / ts)
 		var tx int
 		if p.facingRight {
@@ -224,18 +264,27 @@ func (p *Player) Update(
 			tx = int((p.X - 1) / ts)
 		}
 
-		// in‐bounds, barrel at [ty][tx], and 90 above it?
-		if ty >= 0 && ty < len(Levels[CurrentLevel].Tiles) &&
-			tx >= 0 && tx < len(Levels[CurrentLevel].Tiles[0]) &&
-			Levels[CurrentLevel].Tiles[ty][tx] == 11 {
-			above := ty - 1
-			if above >= 0 && Levels[CurrentLevel].Tiles[above][tx] == 90 {
-				Levels[CurrentLevel].Tiles[above][tx] = 48
-				// optionally mark p.interacting = true so you only do it once
+		above := ty - 1
+		switch {
+		case above >= 1 && Levels[CurrentLevel].Tiles[above][tx] == 84:
+			if pumpkinMissed {
+				p.onInteract("…is that something falling from the sky?")
+				p.onPumpkinRedrop()
+			} else {
+				p.onInteract("There’s nothing inside...")
 			}
+
+		case above >= 1 && Levels[CurrentLevel].Tiles[above][tx] == 90:
+			Levels[CurrentLevel].Tiles[above][tx] = 48
+			p.onInteract("Wow, there’s a pumpkin inside!")
+			p.onPumpkinSpawn()
+
+		default:
+			p.onInteract("There’s nothing inside...")
 		}
 	}
 
+	// PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE -
 	// --- GRAVITY & V ---
 	p.VelY += 0.26
 	if p.VelY > 3 {
@@ -301,12 +350,14 @@ func (p *Player) Update(
 			}
 			if Levels[CurrentLevel].Tiles[yy][xx] == 48 {
 				p.Pumpkins++
+				pumpkinSnd.Rewind()
+				pumpkinSnd.Play()
 				Levels[CurrentLevel].Tiles[yy][xx] = 0
 			}
 		}
 	}
 
-	p.interacting = false
+	/* p.interacting = false
 	if ebiten.IsKeyPressed(ebiten.KeyE) {
 		// check the tile just beside you, in the direction you face:
 		ty := int((p.Y + p.Height/2) / float64(TileSize))
@@ -320,8 +371,17 @@ func (p *Player) Update(
 			ty < len(Levels[CurrentLevel].Tiles) &&
 			Levels[CurrentLevel].Tiles[ty][tx] == 11 {
 			p.interacting = true
+			nowInteracting := tx >= 0 && ty >= 0 && tx < len(Levels[CurrentLevel].Tiles[0]) &&
+				ty < len(Levels[CurrentLevel].Tiles) &&
+				Levels[CurrentLevel].Tiles[ty][tx] == 11
+
+			if nowInteracting && !p.prevInteracting {
+				if p.onInteract != nil {
+				}
+			}
+
 		}
-	}
+	}*/
 	if !p.interacting {
 		// --- FOOTSTEPS ---
 		if p.OnGround && p.VelX != 0 {

@@ -46,8 +46,9 @@ var (
 	btnX = (WindowWidth - btnW) / 2
 	btnY = (WindowHeight - btnH) / 2
 
-	hudFont    font.Face // for the blurb, HUD & timer
-	buttonFont font.Face // for button labels
+	hudFont         font.Face // for the blurb, HUD & timer
+	buttonFont      font.Face // for button labels
+	interactionFont font.Face
 )
 
 func init() {
@@ -78,6 +79,15 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Interaction messages: small size 10
+	interactionFont, err = opentype.NewFace(tt, &opentype.FaceOptions{
+		Size:    10,
+		DPI:     72,
+		Hinting: font.HintingFull,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 type GameState int
@@ -90,71 +100,125 @@ const (
 )
 
 type Game struct {
-	player         *game.Player
-	pumpkins       []*game.Pumpkin
-	pumpkinSpawned bool
-	pumpkinMissed  bool
-
-	jumpSnd, deathSnd *audio.Player
-	stepSnds          map[int]*audio.Player
-	landingSnd        *audio.Player
-
-	buffer *ebiten.Image
-
-	CameraX, CameraY float64
-
-	startTime    time.Time
-	endTime      time.Time
-	timerStopped bool
-
-	// new:
-	state         GameState
-	prevEscape    bool
-	startButton   image.Rectangle
-	restartButton image.Rectangle
-	exitButton    image.Rectangle
-
+	ui                    *UI
+	player                *game.Player
+	pumpkins              []*game.Pumpkin
+	pumpkinSpawned        bool
+	pumpkinMissed         bool
+	jumpSnd, deathSnd     *audio.Player
+	stepSnds              map[int]*audio.Player
+	landingSnd            *audio.Player
+	monsterDeathSnd       *audio.Player
+	pumpkinSnd            *audio.Player
+	buffer                *ebiten.Image
+	CameraX, CameraY      float64
+	startTime             time.Time
+	endTime               time.Time
+	timerStopped          bool
+	state                 GameState
+	prevEscape            bool
+	startButton           image.Rectangle
+	restartButton         image.Rectangle
+	exitButton            image.Rectangle
 	initialPumpkinDropped bool
 	prevInteract          bool
-	pauseStart            time.Time     // when we entered StatePaused
-	accumulated           time.Duration // total time we’ve spent paused
+	pauseStart            time.Time
+	accumulated           time.Duration
+	interactionText       string    // full message
+	interactionRunes      int       // how many runes to draw
+	interactionStart      time.Time // when NewMessage was called
 }
 
+func (g *Game) SpawnInsidePumpkin() {
+	if !g.pumpkinSpawned && g.pumpkinMissed {
+		g.spawnPumpkinAt(390, 0)
+		g.pumpkinSpawned = true
+		g.pumpkinMissed = false
+		g.NewMessage("Wow, there’s a pumpkin inside!")
+	}
+}
+
+func (g *Game) RedropPumpkin() {
+	if g.pumpkinMissed && !g.pumpkinSpawned {
+		g.spawnPumpkinAt(390, 0)
+		g.pumpkinSpawned = true
+		g.pumpkinMissed = false
+		g.NewMessage("…is that something falling from the sky?")
+	}
+}
+
+// NewGame constructs and wires up the Game, including the onInteract callback.
 func NewGame(
 	jumpSnd, deathSnd *audio.Player,
 	stepSnds map[int]*audio.Player,
 	landingSnd *audio.Player,
+	monsterDeathSnd *audio.Player,
+	pumpkinSnd *audio.Player,
 ) *Game {
+	// compute buffer size once
 	bw := int(float64(WindowWidth) / ZoomFactor)
 	bh := int(float64(WindowHeight) / ZoomFactor)
 
-	// define the three buttons:
-	startBtn := image.Rect(btnX, btnY, btnX+btnW, btnY+btnH)
-	restartBtn := image.Rect(btnX, btnY, btnX+btnW, btnY+btnH)
-	exitBtn := image.Rect(btnX, btnY+btnH+20, btnX+btnW, btnY+btnH*2+20)
+	// 1) create the Game instance (player wired in step 2)
+	g := &Game{
+		ui:                    NewUI(),
+		pumpkins:              nil,
+		pumpkinSpawned:        false,
+		pumpkinMissed:         false,
+		jumpSnd:               jumpSnd,
+		deathSnd:              deathSnd,
+		stepSnds:              stepSnds,
+		landingSnd:            landingSnd,
+		monsterDeathSnd:       monsterDeathSnd,
+		pumpkinSnd:            pumpkinSnd,
+		buffer:                ebiten.NewImage(bw, bh),
+		CameraX:               0,
+		CameraY:               0,
+		startTime:             time.Now(),
+		endTime:               time.Time{},
+		timerStopped:          false,
+		state:                 StateTitle,
+		prevEscape:            false,
+		startButton:           image.Rect(btnX, btnY, btnX+btnW, btnY+btnH),
+		restartButton:         image.Rect(btnX, btnY, btnX+btnW, btnY+btnH),
+		exitButton:            image.Rect(btnX, btnY+btnH+20, btnX+btnW, btnY+btnH*2+20),
+		initialPumpkinDropped: false,
+		prevInteract:          false,
+		pauseStart:            time.Time{},
+		accumulated:           0,
 
-	return &Game{
-		player:         game.NewPlayer(Assets),
-		pumpkins:       nil,
-		pumpkinSpawned: false,
-		pumpkinMissed:  false,
-
-		jumpSnd:    jumpSnd,
-		deathSnd:   deathSnd,
-		stepSnds:   stepSnds,
-		landingSnd: landingSnd,
-
-		buffer: ebiten.NewImage(bw, bh),
-
-		state:         StateTitle,
-		startButton:   startBtn,
-		restartButton: restartBtn,
-		exitButton:    exitBtn,
+		// ← initialize your interaction text storage
+		interactionText: "",
 	}
+
+	// 2) wire the player with the onInteract callback
+	//    whenever the player calls onInteract(msg), it will invoke g.NewMessage(msg)
+	g.player = game.NewPlayer(
+		Assets,
+		g.NewMessage,         // onInteract
+		g.SpawnInsidePumpkin, // hidden‐inside pumpkin (tile 90)
+		g.RedropPumpkin,      // sky‐drop re‐drop (tile 84)
+	)
+
+	return g
 }
 
 func (g *Game) Update() error {
-	// 1) Global Esc → pause/resume
+	// ————— Interaction text typewriter & auto-clear —————
+	if g.interactionText != "" {
+		elapsed := time.Since(g.interactionStart)
+		totalRunes := len([]rune(g.interactionText))
+		revealCount := int(elapsed / (50 * time.Millisecond))
+		if revealCount > totalRunes {
+			revealCount = totalRunes
+		}
+		g.interactionRunes = revealCount
+		if elapsed > 3*time.Second {
+			g.interactionText = ""
+		}
+	}
+
+	// Global Escape → pause/resume
 	esc := ebiten.IsKeyPressed(ebiten.KeyEscape)
 	if esc && !g.prevEscape {
 		switch g.state {
@@ -168,26 +232,24 @@ func (g *Game) Update() error {
 	}
 	g.prevEscape = esc
 
-	// 2) Handle non‐Playing states:
+	// Handle non‐Playing states
 	switch g.state {
 	case StateTitle:
-		// Start when clicking the button
 		mx, my := ebiten.CursorPosition()
 		if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) &&
-			g.startButton.Min.X <= mx && mx <= g.startButton.Max.X &&
-			g.startButton.Min.Y <= my && my <= g.startButton.Max.Y {
-
+			mx >= g.startButton.Min.X && mx <= g.startButton.Max.X &&
+			my >= g.startButton.Min.Y && my <= g.startButton.Max.Y {
 			g.state = StatePlaying
 			g.startTime = time.Now()
 		}
 		return nil
 
 	case StatePaused, StateFinished:
-		// Restart or Exit on Left‐click
 		mx, my := ebiten.CursorPosition()
 		if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
 			pt := image.Pt(mx, my)
 			if pt.In(g.restartButton) {
+				// reset flags
 				g.prevInteract = false
 				g.initialPumpkinDropped = false
 				g.pumpkinSpawned = false
@@ -196,22 +258,28 @@ func (g *Game) Update() error {
 				g.accumulated = 0
 				g.pauseStart = time.Time{}
 
-				// restart the clock
+				// reset clock
 				g.startTime = time.Now()
 				g.endTime = time.Time{}
 
-				// clear any pumpkins that were still in flight
+				// clear pumpkins
 				g.pumpkins = nil
 
-				// reset the player (position, pumpkins count, etc.)
-				g.player = game.NewPlayer(Assets)
+				// recreate player
+				g.player = game.NewPlayer(
+					Assets,
+					g.NewMessage,
+					g.SpawnInsidePumpkin,
+					g.RedropPumpkin,
+				)
+
+				// reload level
 				lvlFull, err := game.LoadLevelFS(Assets, "levels/test_level.json")
 				if err != nil {
 					log.Fatal(err)
 				}
 				game.Levels[game.CurrentLevel] = lvlFull
 
-				// go back into the playing state
 				g.state = StatePlaying
 			}
 			if pt.In(g.exitButton) {
@@ -221,35 +289,53 @@ func (g *Game) Update() error {
 		return nil
 	}
 
-	// 0) detect E-press rising edge for re-drop
-	pressed := ebiten.IsKeyPressed(ebiten.KeyE)
-	if pressed && !g.prevInteract && g.pumpkinMissed && !g.pumpkinSpawned {
-		ts := float64(game.TileSize)
-		var tx, ty int
-		if g.player.FacingRight() {
-			tx = int((g.player.X + g.player.Width + 1) / ts)
-		} else {
-			tx = int((g.player.X - 1) / ts)
+	// StatePlaying:
+	// 1) Pumpkin physics: gravity, catch, miss
+	lvl := game.Levels[game.CurrentLevel]
+	for i := 0; i < len(g.pumpkins); i++ {
+		pk := g.pumpkins[i]
+		// gravity
+		pk.VelY += pumpkinGravity
+		if pk.VelY > pumpkinMaxFall {
+			pk.VelY = pumpkinMaxFall
 		}
-		ty = int((g.player.Y + g.player.Height/2) / ts)
-		tiles := game.Levels[game.CurrentLevel].Tiles
-		if ty >= 1 && ty < len(tiles) && tx >= 0 && tx < len(tiles[0]) {
-			under := tiles[ty][tx]
-			above := tiles[ty-1][tx]
-			if under == 11 && above == 84 {
-				// spawn at barrel center, one tile above
-				g.spawnPumpkinAt(390, 0)
-				g.pumpkinSpawned = true
-				g.pumpkinMissed = false
-			}
+		pk.Y += pk.VelY
+
+		// caught?
+		if g.player.Rect().Overlaps(pk.Rect()) {
+			g.player.Pumpkins++
+			g.pumpkinSnd.Rewind()
+			g.pumpkinSnd.Play()
+			g.pumpkins = append(g.pumpkins[:i], g.pumpkins[i+1:]...)
+			i--
+			g.pumpkinSpawned = false
+			g.pumpkinMissed = false
+			continue
+		}
+
+		// missed?
+		bottom := float64(len(lvl.Tiles)) * float64(game.TileSize)
+		if pk.Y > bottom {
+			g.pumpkins = append(g.pumpkins[:i], g.pumpkins[i+1:]...)
+			i--
+			g.pumpkinMissed = true
+			g.pumpkinSpawned = false
+			continue
 		}
 	}
-	g.prevInteract = pressed
 
-	// 1) Player & enemies
-	g.player.Update(g.jumpSnd, g.deathSnd, g.stepSnds, g.landingSnd)
-	lvl := game.Levels[game.CurrentLevel]
+	// 2) Player update (pass in current pumpkinMissed flag)
+	g.player.Update(
+		g.jumpSnd,
+		g.deathSnd,
+		g.stepSnds,
+		g.landingSnd,
+		g.monsterDeathSnd,
+		g.pumpkinSnd,
+		g.pumpkinMissed,
+	)
 
+	// 3) Enemy update & collisions
 	alive := 0
 	for _, en := range lvl.Enemies {
 		en.Update()
@@ -257,11 +343,12 @@ func (g *Game) Update() error {
 			continue
 		}
 		alive++
-		// collision/stomp or respawn
 		pr, er := g.player.Rect(), en.Rect()
 		if pr.Overlaps(er) {
 			if g.player.CollidesHeadOn(er) {
 				en.Alive = false
+				g.monsterDeathSnd.Rewind()
+				g.monsterDeathSnd.Play()
 				g.player.VelY = -4
 			} else {
 				g.player.Respawn()
@@ -269,57 +356,20 @@ func (g *Game) Update() error {
 		}
 	}
 
-	// 2) initial pumpkin drop when last enemy dies (only if it hasn't been missed)
-	// 3) Once no enemies remain, drop the first pumpkin only once
+	// 4) Initial pumpkin drop when last enemy dies
 	if alive == 0 && !g.initialPumpkinDropped {
 		g.spawnPumpkinAt(390, 0)
 		g.initialPumpkinDropped = true
 		g.pumpkinSpawned = true
 	}
 
-	// stop timer at 5 pumpkins
+	// 5) Stop timer at 5 pumpkins
 	if !g.timerStopped && g.player.Pumpkins >= 5 {
 		g.endTime = time.Now()
 		g.timerStopped = true
-		g.state = StateFinished
 	}
 
-	// 3) Pumpkin physics, catch & miss
-	for i := 0; i < len(g.pumpkins); i++ {
-		pk := g.pumpkins[i]
-		// a) gravity
-		pk.VelY += pumpkinGravity
-		if pk.VelY > pumpkinMaxFall {
-			pk.VelY = pumpkinMaxFall
-		}
-		pk.Y += pk.VelY
-
-		// b) caught?
-		if g.player.Rect().Overlaps(pk.Rect()) {
-			g.player.Pumpkins++
-			// remove it
-			g.pumpkins = append(g.pumpkins[:i], g.pumpkins[i+1:]...)
-			i--
-			// reset flags so it won't auto-respawn until you press E again
-			g.pumpkinSpawned = false
-			g.pumpkinMissed = false
-			continue
-		}
-
-		// c) missed (fell below the level)
-		bottom := float64(len(lvl.Tiles)) * float64(game.TileSize)
-		if pk.Y > bottom {
-			// remove it
-			g.pumpkins = append(g.pumpkins[:i], g.pumpkins[i+1:]...)
-			i--
-			// mark it missed and allow only barrel-E to re-drop
-			g.pumpkinMissed = true
-			g.pumpkinSpawned = false
-			continue
-		}
-	}
-
-	// 4) Camera follow
+	// 6) Camera follow
 	bw := float64(g.buffer.Bounds().Dx())
 	bh := float64(g.buffer.Bounds().Dy())
 	g.CameraX = clamp(
@@ -332,6 +382,7 @@ func (g *Game) Update() error {
 		0,
 		float64(len(lvl.Tiles)*game.TileSize)-bh,
 	)
+
 	return nil
 }
 
@@ -417,6 +468,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.buffer.Fill(color.Black)
 	game.DrawLevel(g.buffer, g.CameraX, g.CameraY)
 	g.player.Draw(g.buffer, g.CameraX, g.CameraY)
+
 	lvl := game.Levels[game.CurrentLevel]
 	for _, en := range lvl.Enemies {
 		en.Draw(g.buffer, g.CameraX, g.CameraY)
@@ -430,11 +482,31 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.buffer.DrawImage(p.Image, op)
 	}
 
+	// 1) scale & blit world
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(ZoomFactor, ZoomFactor)
 	screen.DrawImage(g.buffer, op)
 
-	// HUD & timer
+	// 2) floating interaction text (screen-space)
+	// 2) floating interaction text (screen-space)
+	if g.interactionText != "" && g.interactionRunes > 0 {
+		runes := []rune(g.interactionText)
+		msg := string(runes[:g.interactionRunes])
+		b := text.BoundString(interactionFont, msg)
+		w := b.Max.X - b.Min.X
+
+		// world-space center above the player, including camera offset
+		worldX := (g.player.X - g.CameraX) + g.player.Width/2
+		worldY := (g.player.Y - g.CameraY) - 8
+
+		// to screen-space
+		screenX := worldX*ZoomFactor - float64(w)/2
+		screenY := worldY * ZoomFactor
+
+		text.Draw(screen, msg, interactionFont, int(screenX), int(screenY), color.White)
+	}
+
+	// 3) HUD & timer
 	text.Draw(screen, fmt.Sprintf("Pumpkins: %d", g.player.Pumpkins),
 		hudFont, WindowWidth-200, 24, color.White,
 	)
@@ -442,14 +514,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	var d time.Duration
 	if g.timerStopped {
 		d = g.endTime.Sub(g.startTime) - g.accumulated
+	} else if g.state == StatePaused {
+		d = g.pauseStart.Sub(g.startTime) - g.accumulated
 	} else {
-		if g.state == StatePaused {
-			// freeze at the moment we hit pause
-			d = g.pauseStart.Sub(g.startTime) - g.accumulated
-		} else {
-			// normal running
-			d = time.Now().Sub(g.startTime) - g.accumulated
-		}
+		d = time.Now().Sub(g.startTime) - g.accumulated
 	}
 	timerStr := fmt.Sprintf("%02d:%02d.%03d",
 		int(d/time.Minute),
@@ -466,6 +534,13 @@ func (g *Game) Layout(w, h int) (int, int) { return WindowWidth, WindowHeight }
 func (g *Game) spawnPumpkinAt(px, py float64) {
 	p := game.NewPumpkin(px, py-float64(game.TileSize))
 	g.pumpkins = append(g.pumpkins, p)
+}
+
+func (g *Game) NewMessage(msg string) {
+	log.Println("NewMessage:", msg)
+	g.interactionText = msg
+	g.interactionRunes = 0
+	g.interactionStart = time.Now()
 }
 
 func clamp(v, lo, hi float64) float64 {
@@ -507,7 +582,7 @@ func main() {
 	}
 	game.Levels = []game.Level{lvlFull}
 
-	// — set up SFX using our embed‐aware loadWAV —
+	// SOUND DEPENDENCY (ADD SOUND PATHS HERE)
 	audioCtx := audio.NewContext(SampleRate)
 	jumpSnd := loadWAV(audioCtx, "assets/sfx/jump.wav")
 	deathSnd := loadWAV(audioCtx, "assets/sfx/death.wav")
@@ -517,9 +592,12 @@ func main() {
 		37: loadWAV(audioCtx, "assets/sfx/step_stone.wav"),
 		38: loadWAV(audioCtx, "assets/sfx/step_stone.wav"),
 		39: loadWAV(audioCtx, "assets/sfx/step_stone.wav"),
+		33: loadWAV(audioCtx, "assets/sfx/step_stone.wav"),
 		50: loadWAV(audioCtx, "assets/sfx/step_grass.wav"),
 	}
 	landingSnd := loadWAV(audioCtx, "assets/sfx/land.wav")
+	monsterDeathSnd := loadWAV(audioCtx, "assets/sfx/monster_death.wav") // SOUND DEPENDENCY (ADD SOUND HERE)
+	pumpkinSnd := loadWAV(audioCtx, "assets/sfx/pumpkin.wav")
 
 	// — background music (from embed.FS) —
 	f, err := Assets.Open("assets/music/firepot.wav")
@@ -542,6 +620,6 @@ func main() {
 	// — start your Ebiten game —
 	ebiten.SetWindowSize(WindowWidth, WindowHeight)
 	ebiten.SetWindowTitle("Pumpkin Giraffe")
-	g := NewGame(jumpSnd, deathSnd, stepSnds, landingSnd)
+	g := NewGame(jumpSnd, deathSnd, stepSnds, landingSnd, monsterDeathSnd, pumpkinSnd) // SOUND DEPENDENCY (ADD SOUND HERE)
 	log.Fatal(ebiten.RunGame(g))
 }
