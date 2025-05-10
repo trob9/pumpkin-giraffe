@@ -271,7 +271,7 @@ func (p *Player) Update(
 				p.onInteract("…is that something falling from the sky?")
 				p.onPumpkinRedrop()
 			} else {
-				p.onInteract("There’s nothing inside...")
+				p.onInteract("I wonder if something will fall into this barrel just for me...")
 			}
 
 		case above >= 1 && Levels[CurrentLevel].Tiles[above][tx] == 90:
