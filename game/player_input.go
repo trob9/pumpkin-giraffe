@@ -5,43 +5,53 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio"
 )
 
-// readHorizontalInput returns the intended horizontal velocity
-// based on player input (left/right or A/D).
+// readHorizontalInput reads the left/right movement keys (arrow keys or A/D)
+// and returns the desired horizontal speed: negative for left, positive for right,
+// zero if no movement key is held.
 func readHorizontalInput(moveSpeed float64) float64 {
 	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
-		return -moveSpeed
+		return -moveSpeed // move left
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyRight) || ebiten.IsKeyPressed(ebiten.KeyD) {
-		return moveSpeed
+		return moveSpeed // move right
 	}
-	return 0
+	return 0 // no horizontal input
 }
 
-// handleJumpInput checks for jump key press and updates velocity and state.
-// Returns true if a jump occurred.
+// handleJumpInput checks if the player is on solid ground and has just pressed
+// the jump key (Space or Up arrow). It applies either a normal jump or a stronger
+// double jump based on how many frames have elapsed since the last jump.
+// It resets jump timers, plays the jump sound, and returns true when a jump occurs.
 func (p *Player) handleJumpInput(jumpSnd *audio.Player) bool {
+	// Only allow jumping when standing on something
 	if p.OnGround && (ebiten.IsKeyPressed(ebiten.KeySpace) || ebiten.IsKeyPressed(ebiten.KeyUp)) {
-		if p.framesSinceJump <= doubleJumpWindow && p.framesSinceJump > 5 {
-			p.VelY = doubleJumpVel
+		// If within the double-jump window but not too soon (to prevent immediate re-jump)
+		if p.framesSinceJump > 5 && p.framesSinceJump <= doubleJumpWindow {
+			p.VelY = doubleJumpVel // stronger second jump
 		} else {
-			p.VelY = normalJumpVel
+			p.VelY = normalJumpVel // standard first jump
 		}
+		// Reset jump tracking and mark as airborne
 		p.framesSinceJump = 0
 		p.OnGround = false
+
+		// Play jump sound from the start
 		jumpSnd.Rewind()
 		jumpSnd.Play()
 		return true
 	}
-	return false
+	return false // no jump this frame
 }
 
-// IsBesideInteractableObject checks whether the player is adjacent to something interactable.
-
+// IsBesideInteractableObject returns true if the player is adjacent to a tile
+// that supports interaction (e.g., a barrel). It calculates the tile just left
+// or right of the player's mid-height, then checks bounds and interactable status.
 func (p *Player) IsBesideInteractableObject() bool {
-
 	ts := float64(TileSize)
-
+	// Determine the vertical tile row at the player's mid-height
 	ty := int((p.Y + p.Height/2) / ts)
+
+	// Determine the horizontal tile column just outside the player's bounding box
 	var tx int
 	if p.facingRight {
 		tx = int((p.X + p.Width + 1) / ts)
@@ -49,22 +59,32 @@ func (p *Player) IsBesideInteractableObject() bool {
 		tx = int((p.X - 1) / ts)
 	}
 
+	// If that tile coordinate is off the map, there can be no object
 	if ty < 0 || ty >= len(Levels[CurrentLevel].Tiles) ||
 		tx < 0 || tx >= len(Levels[CurrentLevel].Tiles[0]) {
 		return false
 	}
 
+	// Look up the tile ID and return whether it's flagged as interactable
 	tileID := Levels[CurrentLevel].Tiles[ty][tx]
 	return isInteractableObject(tileID)
-
 }
 
-// ShouldTriggerInteraction checks if 'E' was just pressed near an interactable object.
-
+// ShouldTriggerInteraction determines if the interaction key (E) was just pressed
+// this frame and sets up the one-frame interaction pose if the player is beside
+// something interactable. It returns true only on the exact frame the key transitioned.
 func (p *Player) ShouldTriggerInteraction() bool {
+	// Check current E-key state
 	pressed := ebiten.IsKeyPressed(ebiten.KeyE)
+	// A new press occurs when it's down now but was up last frame
 	nowUse := pressed && !p.prevUse
+
+	// Remember current state for next frame's edge detection
 	p.prevUse = pressed
+
+	// If the key is held and the player is next to an interactable object,
+	// set the interacting flag for rendering the use animation.
 	p.interacting = pressed && p.IsBesideInteractableObject()
+
 	return nowUse
 }
