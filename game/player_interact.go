@@ -1,3 +1,4 @@
+// Determines which tile the player is “looking at” when they press E and dispatches to the appropriate TileInteraction handler based on that tile’s class.
 package game
 
 // TryInteract is called when the player presses the interact key (E).

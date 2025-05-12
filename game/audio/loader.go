@@ -1,3 +1,5 @@
+//Handles reading and decoding WAV files from the embedded assets/sfx folder and creating Ebiten audio players.
+
 package audio
 
 import (
