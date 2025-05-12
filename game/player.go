@@ -227,31 +227,6 @@ func (p *Player) Update(
 		}
 	}
 
-	/* p.interacting = false
-	if ebiten.IsKeyPressed(ebiten.KeyE) {
-		// check the tile just beside you, in the direction you face:
-		ty := int((p.Y + p.Height/2) / float64(TileSize))
-		var tx int
-		if p.facingRight {
-			tx = int((p.X + p.Width + 1) / float64(TileSize))
-		} else {
-			tx = int((p.X - 1) / float64(TileSize))
-		}
-		if tx >= 0 && ty >= 0 && tx < len(Levels[CurrentLevel].Tiles[0]) &&
-			ty < len(Levels[CurrentLevel].Tiles) &&
-			Levels[CurrentLevel].Tiles[ty][tx] == 11 {
-			p.interacting = true
-			nowInteracting := tx >= 0 && ty >= 0 && tx < len(Levels[CurrentLevel].Tiles[0]) &&
-				ty < len(Levels[CurrentLevel].Tiles) &&
-				Levels[CurrentLevel].Tiles[ty][tx] == 11
-
-			if nowInteracting && !p.prevInteracting {
-				if p.onInteract != nil {
-				}
-			}
-
-		}
-	}*/
 	if !p.interacting {
 		// --- FOOTSTEPS ---
 		if p.OnGround && p.VelX != 0 {
@@ -357,4 +332,7 @@ func (p *Player) CollidesHeadOn(r image.Rectangle) bool {
 // FacingRight reports which way the player is currently facing.
 func (p *Player) FacingRight() bool {
 	return p.facingRight
+}
+func (p *Player) SetInteracting(v bool) {
+	p.interacting = v
 }

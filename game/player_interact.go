@@ -3,9 +3,6 @@ package game
 // TryInteract checks if the player has just pressed 'E' and is beside an interactable object.
 // If so, it looks up the tile and triggers its associated interaction logic.
 func (p *Player) TryInteract(ctx InteractionContext) {
-	if !p.ShouldTriggerInteraction() {
-		return
-	}
 
 	tx, ty := p.interactionTile()
 	tileID := Levels[CurrentLevel].Tiles[ty][tx]

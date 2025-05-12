@@ -6,83 +6,120 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text"
-	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/font"
 )
 
 const (
-	defaultCharDelay = 20 * time.Millisecond
-	defaultDisplay   = 4 * time.Second
+	defaultCharDelay = 30 * time.Millisecond
+	defaultDisplay   = 3 * time.Second
 )
 
-// Message handles the typewriter reveal and auto-hide.
+// Message handles the typewriter reveal and auto-hide logic.
 type Message struct {
-	full      string
-	index     int
-	timer     time.Duration
-	charDelay time.Duration
-	life      time.Duration
-	active    bool
+	Full      string
+	Index     int
+	StartedAt time.Time // renamed
+	CharDelay time.Duration
+	Life      time.Duration
+	Active    bool
 }
 
+// Start initializes a new message.
 func (m *Message) Start(text string, charDelay, display time.Duration) {
-	m.full = text
-	m.index = 0
-	m.timer = 0
-	m.charDelay = charDelay
-	m.life = display
-	m.active = true
+	m.Full = text
+	m.Index = 0
+	m.StartedAt = time.Now()
+	m.CharDelay = charDelay
+	m.Life = display
+	m.Active = true
 }
 
-func (m *Message) Update(dt time.Duration) {
-	if !m.active {
+// Update advances the reveal by at most one rune per call, based on elapsed time.
+func (m *Message) Update(_ time.Duration) {
+	if !m.Active {
 		return
 	}
-	if m.index < len(m.full) {
-		m.timer += dt
-		for m.timer >= m.charDelay && m.index < len(m.full) {
-			m.timer -= m.charDelay
-			m.index++
+	elapsed := time.Since(m.StartedAt)
+
+	// If we aren't fully revealed yet, check if it's time for the next rune.
+	runes := []rune(m.Full)
+	if m.Index < len(runes) {
+		// has enough time passed for one more char?
+		if elapsed >= m.CharDelay*time.Duration(m.Index+1) {
+			m.Index++
 		}
-	} else {
-		m.life -= dt
-		if m.life <= 0 {
-			m.active = false
-		}
+		return
+	}
+
+	// Fully revealed: check if display duration has passed.
+	if elapsed >= m.CharDelay*time.Duration(len(runes))+m.Life {
+		m.Active = false
 	}
 }
 
+// Text returns the currently visible substring.
 func (m *Message) Text() string {
-	return m.full[:m.index]
+	runes := []rune(m.Full)
+	if m.Index > len(runes) {
+		return m.Full
+	}
+	return string(runes[:m.Index])
 }
 
-// UI is your on-screen UI helper.
+// UI renders floating messages above the player.
 type UI struct {
-	msg Message
+	msg  Message
+	face font.Face
+	zoom float64
 }
 
-// NewUI builds your UI helper.
-func NewUI() *UI {
-	return &UI{}
+// NewUI constructs a UI with the given font face and zoom.
+func NewUI(face font.Face, zoom float64) *UI {
+	return &UI{face: face, zoom: zoom}
 }
 
-// NewMessage triggers a new typewriter message.
+// NewMessage triggers a typewriter message.
 func (ui *UI) NewMessage(s string) {
 	ui.msg.Start(s, defaultCharDelay, defaultDisplay)
 }
 
-// Update must be called every frame with your dt.
+// Update drives the message; call once per frame.
 func (ui *UI) Update(dt time.Duration) {
 	ui.msg.Update(dt)
 }
 
-// Draw, given the player’s position & height, will render the message above their head.
-func (ui *UI) Draw(screen *ebiten.Image, playerX, playerY, playerHeight float64) {
-	if !ui.msg.active {
+// CanTrigger reports whether enough time has passed (typed + display)
+// so it’s OK to show a new message.
+func (ui *UI) CanTrigger() bool {
+	if !ui.msg.Active {
+		return true
+	}
+	elapsed := time.Since(ui.msg.StartedAt)
+	runes := []rune(ui.msg.Full)
+	totalType := ui.msg.CharDelay * time.Duration(len(runes))
+	return elapsed > totalType+ui.msg.Life
+}
+
+// Draw renders the message above the player's head.
+func (ui *UI) Draw(
+	screen *ebiten.Image,
+	cameraX, cameraY,
+	playerX, playerY,
+	playerHeight float64,
+) {
+	if !ui.msg.Active {
 		return
 	}
 	str := ui.msg.Text()
-	b := text.BoundString(basicfont.Face7x13, str)
-	x := playerX - float64(b.Dx()/2)
-	y := playerY - playerHeight/2 - 6 // tweak “-6” to space above your sprite
-	text.Draw(screen, str, basicfont.Face7x13, int(x), int(y), color.White)
+	b := text.BoundString(ui.face, str)
+
+	// world→screen
+	sx := (playerX - cameraX) * ui.zoom
+	sy := (playerY - cameraY) * ui.zoom
+
+	// center text above head
+	x := sx - float64(b.Dx())/2
+	y := sy - (playerHeight*ui.zoom)/2 - float64(b.Dy()) - 4
+
+	text.Draw(screen, str, ui.face, int(x), int(y), color.White)
 }

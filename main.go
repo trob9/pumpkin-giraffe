@@ -53,6 +53,7 @@ var (
 	hudFont         font.Face // for the blurb, HUD & timer
 	buttonFont      font.Face // for button labels
 	interactionFont font.Face
+	uiHelper        *ui.UI
 )
 
 func init() {
@@ -92,6 +93,8 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	uiHelper = ui.NewUI(interactionFont, ZoomFactor)
+
 }
 
 type GameState int
@@ -128,19 +131,15 @@ type Game struct {
 	prevInteract          bool
 	pauseStart            time.Time
 	accumulated           time.Duration
-	interactionText       string    // full message
-	interactionRunes      int       // how many runes to draw
-	interactionStart      time.Time // when NewMessage was called
 	pumpkinSystem         *PumpkinSystem
+	nextInteract          time.Time
 }
 
 // NewGame constructs and wires up the Game, including the onInteract callback.
 func NewGame(
 	jumpSnd, deathSnd *audio.Player,
 	stepSnds map[int]*audio.Player,
-	landingSnd *audio.Player,
-	monsterDeathSnd *audio.Player,
-	pumpkinSnd *audio.Player,
+	landingSnd, monsterDeathSnd, pumpkinSnd *audio.Player,
 ) *Game {
 	// compute buffer size once
 	bw := int(float64(WindowWidth) / ZoomFactor)
@@ -148,8 +147,7 @@ func NewGame(
 
 	// 1) create the Game instance (player wired in step 2)
 	g := &Game{
-		ui: ui.NewUI(),
-
+		ui:                    uiHelper,
 		pumpkins:              nil,
 		pumpkinSpawned:        false,
 		pumpkinMissed:         false,
@@ -174,7 +172,6 @@ func NewGame(
 		prevInteract:          false,
 		pauseStart:            time.Time{},
 		accumulated:           0,
-		interactionText:       "",
 		pumpkinSystem:         NewPumpkinSystem(),
 	}
 
@@ -182,26 +179,18 @@ func NewGame(
 	//    whenever the player calls onInteract(msg), it will invoke g.NewMessage(msg)
 	g.player = game.NewPlayer(
 		Assets,
-		g.NewMessage, // onInteract
+		g.ui.NewMessage, // onInteract
 	)
 
 	return g
 }
 
+// Update advances the game by one frame. It drives the interaction-text typewriter and clearing logic,
+// handles global pause/resume on Escape, and routes clicks on the Title, Paused, and Finished screens.
+// When in StatePlaying it will fall through to the main game logic (player, physics, enemies, etc.).
+// Returns any error encountered during frame processing.
+
 func (g *Game) Update() error {
-	// ————— Interaction text typewriter & auto-clear —————
-	if g.interactionText != "" {
-		elapsed := time.Since(g.interactionStart)
-		totalRunes := len([]rune(g.interactionText))
-		revealCount := int(elapsed / (50 * time.Millisecond))
-		if revealCount > totalRunes {
-			revealCount = totalRunes
-		}
-		g.interactionRunes = revealCount
-		if elapsed > 3*time.Second {
-			g.interactionText = ""
-		}
-	}
 
 	// Global Escape → pause/resume
 	esc := ebiten.IsKeyPressed(ebiten.KeyEscape)
@@ -216,6 +205,9 @@ func (g *Game) Update() error {
 		}
 	}
 	g.prevEscape = esc
+
+	// drive your floating message
+	g.ui.Update(time.Second / 60) // Ebiten’s Update runs ~60×/sec
 
 	// Handle non‐Playing states
 	switch g.state {
@@ -253,7 +245,7 @@ func (g *Game) Update() error {
 				// recreate player
 				g.player = game.NewPlayer(
 					Assets,
-					g.NewMessage,
+					g.ui.NewMessage,
 				)
 
 				// reload level
@@ -286,13 +278,26 @@ func (g *Game) Update() error {
 		g.pumpkinSnd,
 		g.pumpkinMissed,
 	)
-	// 2.5) Interaction: dispatch any “E” presses next to interactables
-	g.player.TryInteract(game.InteractionContext{
-		PumpkinMissed:  g.pumpkinMissed,
-		SpawnPumpkin:   g.spawnPumpkinAt,
-		InitialDropped: g.initialPumpkinDropped,
-		PumpkinSpawned: g.pumpkinSpawned,
-	})
+	// ——— Interaction edge-detect & pose ——— 2.5
+	use := ebiten.IsKeyPressed(ebiten.KeyE)
+	now := time.Now()
+
+	// edge‐detect + cooldown + only when beside object
+	if use && !g.prevInteract && now.After(g.nextInteract) && g.player.IsBesideInteractableObject() {
+		// trigger one‐frame pose + interaction
+		g.player.SetInteracting(true)
+		g.player.TryInteract(game.InteractionContext{
+			PumpkinMissed:  g.pumpkinMissed,
+			SpawnPumpkin:   g.spawnPumpkinAt,
+			InitialDropped: g.initialPumpkinDropped,
+			PumpkinSpawned: g.pumpkinSpawned,
+		})
+		// set next allowed time (1 second cooldown)
+		g.nextInteract = now.Add(1 * time.Second)
+	} else {
+		g.player.SetInteracting(false)
+	}
+	g.prevInteract = use
 
 	lvl := game.Levels[game.CurrentLevel]
 	// 3) Enemy update & collisions
@@ -441,24 +446,13 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	op.GeoM.Scale(ZoomFactor, ZoomFactor)
 	screen.DrawImage(g.buffer, op)
 
-	// 2) floating interaction text (screen-space)
-	// 2) floating interaction text (screen-space)
-	if g.interactionText != "" && g.interactionRunes > 0 {
-		runes := []rune(g.interactionText)
-		msg := string(runes[:g.interactionRunes])
-		b := text.BoundString(interactionFont, msg)
-		w := b.Max.X - b.Min.X
-
-		// world-space center above the player, including camera offset
-		worldX := (g.player.X - g.CameraX) + g.player.Width/2
-		worldY := (g.player.Y - g.CameraY) - 8
-
-		// to screen-space
-		screenX := worldX*ZoomFactor - float64(w)/2
-		screenY := worldY * ZoomFactor
-
-		text.Draw(screen, msg, interactionFont, int(screenX), int(screenY), color.White)
-	}
+	// after blitting world:
+	g.ui.Draw(
+		screen,
+		g.CameraX, g.CameraY, // camera offset
+		g.player.X, g.player.Y, // player world pos
+		g.player.Height, // sprite height
+	)
 
 	// 3) HUD & timer
 	text.Draw(screen, fmt.Sprintf("Pumpkins: %d", g.player.Pumpkins),
@@ -489,13 +483,6 @@ func (g *Game) spawnPumpkinAt(px, py float64) {
 	p := game.NewPumpkin(px, py-float64(game.TileSize))
 	g.pumpkins = append(g.pumpkins, p)
 	g.pumpkinSpawned = true // mark that a pumpkin is now in flight
-}
-
-func (g *Game) NewMessage(msg string) {
-	log.Println("NewMessage:", msg)
-	g.interactionText = msg
-	g.interactionRunes = 0
-	g.interactionStart = time.Now()
 }
 
 func clamp(v, lo, hi float64) float64 {
@@ -561,5 +548,6 @@ func main() {
 	ebiten.SetWindowSize(WindowWidth, WindowHeight)
 	ebiten.SetWindowTitle("Pumpkin Giraffe")
 	g := NewGame(jumpSnd, deathSnd, stepSnds, landingSnd, monsterDeathSnd, pumpkinSnd) // SOUND DEPENDENCY (ADD SOUND HERE)
+	g.ui = uiHelper
 	log.Fatal(ebiten.RunGame(g))
 }
