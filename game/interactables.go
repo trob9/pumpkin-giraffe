@@ -22,8 +22,29 @@ func LoadPumpkinImage(img *ebiten.Image) {
 
 // InteractionContext contains any dynamic game state needed for interactions.
 type InteractionContext struct {
-	PumpkinMissed bool
-	// Extend this with more fields as needed (e.g. inventory, time, quest flags)
+	PumpkinMissed  bool
+	SpawnPumpkin   func(x, y float64)
+	InitialDropped bool
+	PumpkinSpawned bool
+}
+
+// Pumpkin is the falling pumpkin entity.
+type Pumpkin struct {
+	X, Y  float64
+	VelY  float64
+	Image *ebiten.Image
+	Alive bool
+}
+
+// NewPumpkin creates a new falling pumpkin.
+func NewPumpkin(x, y float64) *Pumpkin {
+	return &Pumpkin{
+		X:     x,
+		Y:     y,
+		VelY:  0,
+		Alive: true,
+		Image: pumpkinImage, // Make sure this variable exists and is initialized
+	}
 }
 
 // TileInteraction defines a function signature for things the player can interact with.
@@ -62,12 +83,24 @@ var tileInteractions = map[string]TileInteraction{
 		}
 	},
 	"trigger_barrel": func(p *Player, ctx InteractionContext) {
-		if ctx.PumpkinMissed {
-			p.onInteract("…is that something falling from the sky?")
-			p.onPumpkinRedrop()
-		} else {
-			p.onInteract("Nothing happens...")
+		// nothing until the initial drop
+		if !ctx.InitialDropped {
+			p.onInteract("Nothing happens…")
+			return
 		}
+		// only proceed if the previous pumpkin was missed and none is flying
+		if !ctx.PumpkinMissed {
+			p.onInteract("feeling greedy are we?")
+			return
+		}
+		if ctx.PumpkinSpawned {
+			p.onInteract("Catch it, quick!")
+			return
+		}
+		// redrop message
+		p.onInteract("…is that something falling from the sky?")
+		// spawn exactly one new pumpkin
+		ctx.SpawnPumpkin(p.X+p.Width/2, 0)
 	},
 }
 
@@ -80,32 +113,15 @@ func LoadInteractableAssets(assets embed.FS) {
 	if err != nil {
 		panic(err)
 	}
+
 	pumpkinImage = ebiten.NewImageFromImage(img)
+
 }
 
 // isInteractableObject returns true if the tile is known to have an interaction.
 func isInteractableObject(tileID int) bool {
 	_, ok := tileClassByID[tileID]
 	return ok
-}
-
-// Pumpkin is the falling pumpkin entity.
-type Pumpkin struct {
-	X, Y  float64
-	VelY  float64
-	Image *ebiten.Image
-	Alive bool
-}
-
-// NewPumpkin creates a new falling pumpkin.
-func NewPumpkin(x, y float64) *Pumpkin {
-	return &Pumpkin{
-		X:     x,
-		Y:     y,
-		VelY:  0,
-		Alive: true,
-		Image: pumpkinImage, // Make sure this variable exists and is initialized
-	}
 }
 
 // Rect returns the bounding box of the pumpkin for collision.

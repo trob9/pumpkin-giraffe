@@ -131,24 +131,7 @@ type Game struct {
 	interactionText       string    // full message
 	interactionRunes      int       // how many runes to draw
 	interactionStart      time.Time // when NewMessage was called
-}
-
-func (g *Game) SpawnInsidePumpkin() {
-	if !g.pumpkinSpawned && g.pumpkinMissed {
-		g.spawnPumpkinAt(390, 0)
-		g.pumpkinSpawned = true
-		g.pumpkinMissed = false
-		g.NewMessage("Wow, there’s a pumpkin inside!")
-	}
-}
-
-func (g *Game) RedropPumpkin() {
-	if g.pumpkinMissed && !g.pumpkinSpawned {
-		g.spawnPumpkinAt(390, 0)
-		g.pumpkinSpawned = true
-		g.pumpkinMissed = false
-		g.NewMessage("…is that something falling from the sky?")
-	}
+	pumpkinSystem         *PumpkinSystem
 }
 
 // NewGame constructs and wires up the Game, including the onInteract callback.
@@ -191,18 +174,15 @@ func NewGame(
 		prevInteract:          false,
 		pauseStart:            time.Time{},
 		accumulated:           0,
-
-		// ← initialize your interaction text storage
-		interactionText: "",
+		interactionText:       "",
+		pumpkinSystem:         NewPumpkinSystem(),
 	}
 
 	// 2) wire the player with the onInteract callback
 	//    whenever the player calls onInteract(msg), it will invoke g.NewMessage(msg)
 	g.player = game.NewPlayer(
 		Assets,
-		g.NewMessage,         // onInteract
-		g.SpawnInsidePumpkin, // hidden‐inside pumpkin (tile 90)
-		g.RedropPumpkin,      // sky‐drop re‐drop (tile 84)
+		g.NewMessage, // onInteract
 	)
 
 	return g
@@ -274,8 +254,6 @@ func (g *Game) Update() error {
 				g.player = game.NewPlayer(
 					Assets,
 					g.NewMessage,
-					g.SpawnInsidePumpkin,
-					g.RedropPumpkin,
 				)
 
 				// reload level
@@ -296,38 +274,7 @@ func (g *Game) Update() error {
 
 	// StatePlaying:
 	// 1) Pumpkin physics: gravity, catch, miss
-	lvl := game.Levels[game.CurrentLevel]
-	for i := 0; i < len(g.pumpkins); i++ {
-		pk := g.pumpkins[i]
-		// gravity
-		pk.VelY += pumpkinGravity
-		if pk.VelY > pumpkinMaxFall {
-			pk.VelY = pumpkinMaxFall
-		}
-		pk.Y += pk.VelY
-
-		// caught?
-		if g.player.Rect().Overlaps(pk.Rect()) {
-			g.player.Pumpkins++
-			g.pumpkinSnd.Rewind()
-			g.pumpkinSnd.Play()
-			g.pumpkins = append(g.pumpkins[:i], g.pumpkins[i+1:]...)
-			i--
-			g.pumpkinSpawned = false
-			g.pumpkinMissed = false
-			continue
-		}
-
-		// missed?
-		bottom := float64(len(lvl.Tiles)) * float64(game.TileSize)
-		if pk.Y > bottom {
-			g.pumpkins = append(g.pumpkins[:i], g.pumpkins[i+1:]...)
-			i--
-			g.pumpkinMissed = true
-			g.pumpkinSpawned = false
-			continue
-		}
-	}
+	g.pumpkinSystem.Update(g)
 
 	// 2) Player update
 	g.player.Update(
@@ -339,7 +286,15 @@ func (g *Game) Update() error {
 		g.pumpkinSnd,
 		g.pumpkinMissed,
 	)
+	// 2.5) Interaction: dispatch any “E” presses next to interactables
+	g.player.TryInteract(game.InteractionContext{
+		PumpkinMissed:  g.pumpkinMissed,
+		SpawnPumpkin:   g.spawnPumpkinAt,
+		InitialDropped: g.initialPumpkinDropped,
+		PumpkinSpawned: g.pumpkinSpawned,
+	})
 
+	lvl := game.Levels[game.CurrentLevel]
 	// 3) Enemy update & collisions
 	alive := 0
 	for _, en := range lvl.Enemies {
@@ -359,13 +314,6 @@ func (g *Game) Update() error {
 				g.player.Respawn()
 			}
 		}
-	}
-
-	// 4) Initial pumpkin drop when last enemy dies
-	if alive == 0 && !g.initialPumpkinDropped {
-		g.spawnPumpkinAt(390, 0)
-		g.initialPumpkinDropped = true
-		g.pumpkinSpawned = true
 	}
 
 	// 5) Stop timer at 5 pumpkins
@@ -540,6 +488,7 @@ func (g *Game) Layout(w, h int) (int, int) { return WindowWidth, WindowHeight }
 func (g *Game) spawnPumpkinAt(px, py float64) {
 	p := game.NewPumpkin(px, py-float64(game.TileSize))
 	g.pumpkins = append(g.pumpkins, p)
+	g.pumpkinSpawned = true // mark that a pumpkin is now in flight
 }
 
 func (g *Game) NewMessage(msg string) {

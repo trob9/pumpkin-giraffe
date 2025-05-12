@@ -51,10 +51,8 @@ type Player struct {
 	facingRight                      bool
 
 	// interaction callbacks & state
-	interacting     bool
-	onInteract      func(msg string)
-	onPumpkinSpawn  func()
-	onPumpkinRedrop func()
+	interacting bool
+	onInteract  func(msg string)
 
 	prevUse bool
 }
@@ -64,12 +62,7 @@ var (
 	spawnY float64 = 300
 )
 
-func NewPlayer(
-	assets embed.FS,
-	onInteract func(string),
-	onPumpkinSpawn func(),
-	onPumpkinRedrop func(),
-) *Player {
+func NewPlayer(assets embed.FS, onInteract func(string)) *Player {
 	// multi-frame walk animations
 	walkR := loadAnimationSheet(assets, "assets/sprites/player_walk_right.png", walkFrames)
 	walkL := loadAnimationSheet(assets, "assets/sprites/player_walk_left.png", walkFrames)
@@ -102,15 +95,13 @@ func NewPlayer(
 		interactR: interactR,
 		interactL: interactL,
 
-		walkDelay:       walkDelay,
-		walkTimer:       walkDelay,
-		idleDelay:       idleDelay,
-		idleTimer:       idleDelay,
-		facingRight:     true,
-		onInteract:      onInteract,
-		prevUse:         false,
-		onPumpkinSpawn:  onPumpkinSpawn,
-		onPumpkinRedrop: onPumpkinRedrop,
+		walkDelay:   walkDelay,
+		walkTimer:   walkDelay,
+		idleDelay:   idleDelay,
+		idleTimer:   idleDelay,
+		facingRight: true,
+		onInteract:  onInteract,
+		prevUse:     false,
 	}
 }
 
@@ -164,13 +155,6 @@ func (p *Player) Update(
 	if p.X+p.Width > ScreenWidth {
 		p.X = ScreenWidth - p.Width
 	}
-
-	// --- INTERACT LOGIC & POSE ---
-	p.interacting = ebiten.IsKeyPressed(ebiten.KeyE) && p.IsBesideInteractableObject()
-	p.TryInteract(InteractionContext{
-		PumpkinMissed: pumpkinMissed,
-	})
-
 	// --- GRAVITY & V ---
 	p.VelY += 0.26
 	if p.VelY > 3 {
