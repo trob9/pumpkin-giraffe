@@ -1,11 +1,9 @@
 package game
 
 import (
-	"bytes"
 	"embed"
 	"image"
 	_ "image/png"
-	"io/fs"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/audio"
@@ -26,7 +24,6 @@ const (
 	idleFrames = 2 // <-- two frames in your idle sheets
 	spriteW    = 16
 	spriteH    = 16
-	spriteDir  = "assets/sprites/"
 )
 
 type Player struct {
@@ -67,81 +64,23 @@ var (
 	spawnY float64 = 300
 )
 
-func loadSheet(fsys fs.FS, path string, frames int) []*ebiten.Image {
-	data, err := fs.ReadFile(fsys, path) // use fs.ReadFile
-	if err != nil {
-		panic(err)
-	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		panic(err)
-	}
-	sheet := ebiten.NewImageFromImage(img)
-	out := make([]*ebiten.Image, frames)
-	for i := 0; i < frames; i++ {
-		r := image.Rect(i*spriteW, 0, (i+1)*spriteW, spriteH)
-		out[i] = sheet.SubImage(r).(*ebiten.Image)
-	}
-	return out
-}
-
-func loadImage(fsys fs.FS, path string) *ebiten.Image {
-	data, err := fs.ReadFile(fsys, path)
-	if err != nil {
-		panic(err)
-	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		panic(err)
-	}
-	return ebiten.NewImageFromImage(img)
-}
 func NewPlayer(
 	assets embed.FS,
 	onInteract func(string),
 	onPumpkinSpawn func(),
 	onPumpkinRedrop func(),
 ) *Player {
-	loadSheet := func(path string, frames int) []*ebiten.Image {
-		data, err := assets.ReadFile(path) // ← read from your embed.FS
-		if err != nil {
-			panic(err)
-		}
-		img, _, err := image.Decode(bytes.NewReader(data))
-		if err != nil {
-			panic(err)
-		}
-		sheet := ebiten.NewImageFromImage(img)
-		out := make([]*ebiten.Image, frames)
-		for i := 0; i < frames; i++ {
-			r := image.Rect(i*spriteW, 0, (i+1)*spriteW, spriteH)
-			out[i] = sheet.SubImage(r).(*ebiten.Image)
-		}
-		return out
-	}
+	// multi-frame walk animations
+	walkR := loadAnimationSheet(assets, "assets/sprites/player_walk_right.png", walkFrames)
+	walkL := loadAnimationSheet(assets, "assets/sprites/player_walk_left.png", walkFrames)
+	idleR := loadAnimationSheet(assets, "assets/sprites/player_idle_right.png", idleFrames)
+	idleL := loadAnimationSheet(assets, "assets/sprites/player_idle_left.png", idleFrames)
 
-	walkR := loadSheet(spriteDir+"player_walk_right.png", walkFrames)
-	walkL := loadSheet(spriteDir+"player_walk_left.png", walkFrames)
-	idleR := loadSheet(spriteDir+"player_idle_right.png", idleFrames)
-	idleL := loadSheet(spriteDir+"player_idle_left.png", idleFrames)
-
-	loadImage := func(path string) *ebiten.Image {
-		data, err := assets.ReadFile(path)
-		if err != nil {
-			panic(err)
-		}
-		img, _, err := image.Decode(bytes.NewReader(data))
-		if err != nil {
-			panic(err)
-		}
-		return ebiten.NewImageFromImage(img)
-	}
-
-	// single-frame jumps
-	jr := loadImage(spriteDir + "player_jump_right.png")
-	jl := loadImage(spriteDir + "player_jump_left.png")
-	interactR := loadImage(spriteDir + "player_interact_right.png")
-	interactL := loadImage(spriteDir + "player_interact_left.png")
+	// single-frame jump poses
+	jr := loadPoseSheet(assets, "assets/sprites/player_jump_right.png")
+	jl := loadPoseSheet(assets, "assets/sprites/player_jump_left.png")
+	interactR := loadPoseSheet(assets, "assets/sprites/player_interact_right.png")
+	interactL := loadPoseSheet(assets, "assets/sprites/player_interact_left.png")
 
 	walkDelay := 60 / walkFPS
 	idleDelay := (60 / idleFPS) * 15
@@ -169,9 +108,9 @@ func NewPlayer(
 		idleTimer:       idleDelay,
 		facingRight:     true,
 		onInteract:      onInteract,
+		prevUse:         false,
 		onPumpkinSpawn:  onPumpkinSpawn,
 		onPumpkinRedrop: onPumpkinRedrop,
-		prevUse:         false,
 	}
 }
 
@@ -195,12 +134,20 @@ func (p *Player) Update(
 	stepSnds map[int]*audio.Player,
 	landingSnd *audio.Player,
 	monsterDeathSnd *audio.Player,
-	pumpkinSnd *audio.Player, // SOUND DEPENDENCY (ADD MORE SOUND PARAMETERS TO ACCEPT IF YOU'RE ADDING MORE SOUND)
+	pumpkinSnd *audio.Player,
 	pumpkinMissed bool,
 ) {
 	p.framesSinceJump++
 	ts := float64(TileSize)
 	moveSpeed := 1.5
+	intendedVX := readHorizontalInput(moveSpeed)
+
+	// Update facing direction based on intended movement
+	if intendedVX > 0 {
+		p.facingRight = true
+	} else if intendedVX < 0 {
+		p.facingRight = false
+	}
 
 	// 0) respawn if fallen
 	if p.Y > float64(ScreenHeight) {
@@ -208,19 +155,6 @@ func (p *Player) Update(
 		deathSnd.Play()
 		p.Respawn()
 		return
-	}
-
-	// --- INPUT ---
-	var intendedVX float64
-	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
-		intendedVX = -moveSpeed
-	} else if ebiten.IsKeyPressed(ebiten.KeyRight) || ebiten.IsKeyPressed(ebiten.KeyD) {
-		intendedVX = moveSpeed
-	}
-	if intendedVX < 0 {
-		p.facingRight = false
-	} else if intendedVX > 0 {
-		p.facingRight = true
 	}
 
 	// --- X BOUNDS ---
@@ -231,60 +165,12 @@ func (p *Player) Update(
 		p.X = ScreenWidth - p.Width
 	}
 
-	// PUMPKINS START HERE - PUMPKINS START HERE - PUMPKINS START HERE - PUMPKINS START HERE - PUMPKINS START HERE - PUMPKINS START HERE - PUMPKINS START HERE
 	// --- INTERACT LOGIC & POSE ---
-	pressed := ebiten.IsKeyPressed(ebiten.KeyE)
-	nowUse := pressed && !p.prevUse
-	p.prevUse = pressed
+	p.interacting = ebiten.IsKeyPressed(ebiten.KeyE) && p.IsBesideInteractableObject()
+	p.TryInteract(InteractionContext{
+		PumpkinMissed: pumpkinMissed,
+	})
 
-	// Do we show the interact sprite?  Yes if E is down and there's a barrel beside us:
-	{
-		ts := float64(TileSize)
-		ty := int((p.Y + p.Height/2) / ts)
-		var tx int
-		if p.facingRight {
-			tx = int((p.X + p.Width + 1) / ts)
-		} else {
-			tx = int((p.X - 1) / ts)
-		}
-		barrelBeside := ty >= 0 && ty < len(Levels[CurrentLevel].Tiles) &&
-			tx >= 0 && tx < len(Levels[CurrentLevel].Tiles[0]) &&
-			Levels[CurrentLevel].Tiles[ty][tx] == 11
-		p.interacting = pressed && barrelBeside
-	}
-
-	// Only on the rising edge do we inspect above‐tile and spawn/message:
-	if nowUse {
-		ts := float64(TileSize)
-		ty := int((p.Y + p.Height/2) / ts)
-		var tx int
-		if p.facingRight {
-			tx = int((p.X + p.Width + 1) / ts)
-		} else {
-			tx = int((p.X - 1) / ts)
-		}
-
-		above := ty - 1
-		switch {
-		case above >= 1 && Levels[CurrentLevel].Tiles[above][tx] == 84:
-			if pumpkinMissed {
-				p.onInteract("…is that something falling from the sky?")
-				p.onPumpkinRedrop()
-			} else {
-				p.onInteract("I wonder if something will fall into this barrel just for me...")
-			}
-
-		case above >= 1 && Levels[CurrentLevel].Tiles[above][tx] == 90:
-			Levels[CurrentLevel].Tiles[above][tx] = 48
-			p.onInteract("Wow, there’s a pumpkin inside!")
-			p.onPumpkinSpawn()
-
-		default:
-			p.onInteract("There’s nothing inside...")
-		}
-	}
-
-	// PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE - PUMPKINS END HERE -
 	// --- GRAVITY & V ---
 	p.VelY += 0.26
 	if p.VelY > 3 {
@@ -397,19 +283,8 @@ func (p *Player) Update(
 		} else {
 			p.stepTimer = 0
 		}
-
-		// --- JUMP ---
-		if p.OnGround && (ebiten.IsKeyPressed(ebiten.KeySpace) || ebiten.IsKeyPressed(ebiten.KeyUp)) {
-			if p.framesSinceJump <= doubleJumpWindow && p.framesSinceJump > 5 {
-				p.VelY = doubleJumpVel
-			} else {
-				p.VelY = normalJumpVel
-			}
-			p.framesSinceJump = 0
-			p.OnGround = false
-			jumpSnd.Rewind()
-			jumpSnd.Play()
-		}
+		// --- JUMP INPUT & ACTION ---
+		p.handleJumpInput(jumpSnd)
 
 		// --- IDLE ANIM (when stopped on ground) ---
 		// ANIMATION: separate walk vs. idle
@@ -438,49 +313,6 @@ func (p *Player) Update(
 	}
 }
 
-func (p *Player) Draw(screen *ebiten.Image, camX, camY float64) {
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(p.X-camX, p.Y-camY)
-
-	if p.interacting {
-		if p.facingRight {
-			screen.DrawImage(p.interactR, op)
-		} else {
-			screen.DrawImage(p.interactL, op)
-		}
-		return
-	}
-
-	var img *ebiten.Image
-	switch {
-	case !p.OnGround:
-		if p.facingRight {
-			img = p.jumpR
-		} else {
-			img = p.jumpL
-		}
-	case p.VelX != 0:
-		if p.facingRight {
-			img = p.walkR[p.frameIndex]
-		} else {
-			img = p.walkL[p.frameIndex]
-		}
-	default: // idle
-		if p.facingRight {
-			img = p.idleR[p.idleIndex]
-		} else {
-			img = p.idleL[p.idleIndex]
-		}
-	}
-	p.idleTimer--
-	if p.idleTimer <= 0 {
-		p.idleTimer = p.idleDelay
-		p.idleIndex = (p.idleIndex + 1) % idleFrames
-	}
-
-	screen.DrawImage(img, op)
-}
-
 // isWall blocks horizontal movement
 func isWall(tx, ty int) bool {
 	rows := len(Levels[CurrentLevel].Tiles)
@@ -489,7 +321,7 @@ func isWall(tx, ty int) bool {
 		return false
 	}
 	switch Levels[CurrentLevel].Tiles[ty][tx] {
-	case 10, 11, 27, 33, 37, 38, 39, 47, 49, 50, 51:
+	case 10, 11, 27, 33, 37, 38, 39, 47, 49, 50, 51, 84, 90:
 		return true
 	default:
 		return false

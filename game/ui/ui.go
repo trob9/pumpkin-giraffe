@@ -1,4 +1,4 @@
-package main
+package ui
 
 import (
 	"image/color"
@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	defaultCharDelay = 50 * time.Millisecond
-	defaultDisplay   = 2 * time.Second
+	defaultCharDelay = 20 * time.Millisecond
+	defaultDisplay   = 4 * time.Second
 )
 
 // Message handles the typewriter reveal and auto-hide.

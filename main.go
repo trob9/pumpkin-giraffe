@@ -1,6 +1,11 @@
 package main
 
 import (
+	"PumpkinGiraffe/game"
+	aud "PumpkinGiraffe/game/audio" // aliased as "aud" because the ebitengine also has an "audio" package
+	"PumpkinGiraffe/game/loader"
+
+	"PumpkinGiraffe/game/ui"
 	"embed"
 	"fmt"
 	"image"
@@ -16,12 +21,11 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/text"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
-
-	"PumpkinGiraffe/game"
 )
 
 //go:embed assets/tilesets/*.png
 //go:embed assets/sprites/*.png
+//go:embed assets/items/*.png
 //go:embed assets/sfx/*.wav
 //go:embed assets/music/*.wav
 //go:embed assets/fonts/*.ttf
@@ -100,7 +104,7 @@ const (
 )
 
 type Game struct {
-	ui                    *UI
+	ui                    *ui.UI
 	player                *game.Player
 	pumpkins              []*game.Pumpkin
 	pumpkinSpawned        bool
@@ -161,7 +165,8 @@ func NewGame(
 
 	// 1) create the Game instance (player wired in step 2)
 	g := &Game{
-		ui:                    NewUI(),
+		ui: ui.NewUI(),
+
 		pumpkins:              nil,
 		pumpkinSpawned:        false,
 		pumpkinMissed:         false,
@@ -274,7 +279,7 @@ func (g *Game) Update() error {
 				)
 
 				// reload level
-				lvlFull, err := game.LoadLevelFS(Assets, "levels/test_level.json")
+				lvlFull, err := loader.LoadLevelFS(Assets, "levels/test_level.json")
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -324,7 +329,7 @@ func (g *Game) Update() error {
 		}
 	}
 
-	// 2) Player update (pass in current pumpkinMissed flag)
+	// 2) Player update
 	g.player.Update(
 		g.jumpSnd,
 		g.deathSnd,
@@ -367,6 +372,7 @@ func (g *Game) Update() error {
 	if !g.timerStopped && g.player.Pumpkins >= 5 {
 		g.endTime = time.Now()
 		g.timerStopped = true
+		g.state = StateFinished
 	}
 
 	// 6) Camera follow
@@ -553,30 +559,15 @@ func clamp(v, lo, hi float64) float64 {
 	return v
 }
 
-func loadWAV(ctx *audio.Context, path string) *audio.Player {
-	f, err := Assets.Open(path)
-	if err != nil {
-		log.Fatalf("open %s: %v", path, err)
-	}
-	defer f.Close()
-	d, err := wav.Decode(ctx, f)
-	if err != nil {
-		log.Fatalf("decode %s: %v", path, err)
-	}
-	p, err := audio.NewPlayer(ctx, d)
-	if err != nil {
-		log.Fatalf("new player %s: %v", path, err)
-	}
-	return p
-}
-
 func main() {
 	// — load tileset & level (now reading from embed.FS) —
 	if err := game.LoadTilesetFS(Assets, "assets/tilesets/platformer.png"); err != nil {
 		log.Fatal(err)
 	}
 
-	lvlFull, err := game.LoadLevelFS(Assets, "levels/test_level.json")
+	game.LoadInteractableAssets(Assets)
+
+	lvlFull, err := loader.LoadLevelFS(Assets, "levels/test_level.json")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -584,20 +575,20 @@ func main() {
 
 	// SOUND DEPENDENCY (ADD SOUND PATHS HERE)
 	audioCtx := audio.NewContext(SampleRate)
-	jumpSnd := loadWAV(audioCtx, "assets/sfx/jump.wav")
-	deathSnd := loadWAV(audioCtx, "assets/sfx/death.wav")
+	jumpSnd := aud.LoadWAV(Assets, "assets/sfx/jump.wav")
+	deathSnd := aud.LoadWAV(Assets, "assets/sfx/death.wav")
 	stepSnds := map[int]*audio.Player{
-		10: loadWAV(audioCtx, "assets/sfx/step_grass.wav"),
-		27: loadWAV(audioCtx, "assets/sfx/step_grass.wav"),
-		37: loadWAV(audioCtx, "assets/sfx/step_stone.wav"),
-		38: loadWAV(audioCtx, "assets/sfx/step_stone.wav"),
-		39: loadWAV(audioCtx, "assets/sfx/step_stone.wav"),
-		33: loadWAV(audioCtx, "assets/sfx/step_stone.wav"),
-		50: loadWAV(audioCtx, "assets/sfx/step_grass.wav"),
+		10: aud.LoadWAV(Assets, "assets/sfx/step_grass.wav"),
+		27: aud.LoadWAV(Assets, "assets/sfx/step_grass.wav"),
+		37: aud.LoadWAV(Assets, "assets/sfx/step_stone.wav"),
+		38: aud.LoadWAV(Assets, "assets/sfx/step_stone.wav"),
+		39: aud.LoadWAV(Assets, "assets/sfx/step_stone.wav"),
+		33: aud.LoadWAV(Assets, "assets/sfx/step_stone.wav"),
+		50: aud.LoadWAV(Assets, "assets/sfx/step_grass.wav"),
 	}
-	landingSnd := loadWAV(audioCtx, "assets/sfx/land.wav")
-	monsterDeathSnd := loadWAV(audioCtx, "assets/sfx/monster_death.wav") // SOUND DEPENDENCY (ADD SOUND HERE)
-	pumpkinSnd := loadWAV(audioCtx, "assets/sfx/pumpkin.wav")
+	landingSnd := aud.LoadWAV(Assets, "assets/sfx/land.wav")
+	monsterDeathSnd := aud.LoadWAV(Assets, "assets/sfx/monster_death.wav") // SOUND DEPENDENCY (ADD SOUND HERE)
+	pumpkinSnd := aud.LoadWAV(Assets, "assets/sfx/pumpkin.wav")
 
 	// — background music (from embed.FS) —
 	f, err := Assets.Open("assets/music/firepot.wav")

@@ -1,10 +1,12 @@
-package game
+package loader
 
 import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"path"
+
+	"PumpkinGiraffe/game"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -63,27 +65,27 @@ func LoadLevelFromFS(fsys fs.FS, path string) ([][]int, error) {
 }
 
 // LoadLevelFS loads a full Level (tiles, background, enemies) from the given fs.FS.
-func LoadLevelFS(fsys fs.FS, path string) (Level, error) {
+func LoadLevelFS(fsys fs.FS, path string) (game.Level, error) {
 	// 1) tiles
 	tiles, err := LoadLevelFromFS(fsys, path)
 	if err != nil {
-		return Level{}, err
+		return game.Level{}, err
 	}
 	// 2) background
 	bgPath, offX, offY, err := LoadBackgroundFromFS(fsys, path)
 	if err != nil {
-		return Level{}, err
+		return game.Level{}, err
 	}
 	var bgImg *ebiten.Image
 	if bgPath != "" {
 		f, err := fsys.Open(bgPath)
 		if err != nil {
-			return Level{}, err
+			return game.Level{}, err
 		}
 		img, _, err := ebitenutil.NewImageFromReader(f)
 		f.Close()
 		if err != nil {
-			return Level{}, err
+			return game.Level{}, err
 		}
 		w, h := img.Size()
 		bgImg = ebiten.NewImage(w, h)
@@ -92,18 +94,18 @@ func LoadLevelFS(fsys fs.FS, path string) (Level, error) {
 		bgImg.DrawImage(img, opts)
 	}
 	// 3) spawn enemies
-	var enemies []*Enemy
+	var enemies []*game.Enemy
 	for y := range tiles {
 		for x, id := range tiles[y] {
-			if id == EnemySpawnID {
+			if id == game.EnemySpawnID {
 				tiles[y][x] = 0
-				sx := float64(x * TileSize)
-				sy := float64((y + 1) * TileSize)
-				enemies = append(enemies, NewEnemyFS(fsys, sx, sy))
+				sx := float64(x * game.TileSize)
+				sy := float64((y + 1) * game.TileSize)
+				enemies = append(enemies, game.NewEnemyFS(fsys, sx, sy))
 			}
 		}
 	}
-	return Level{Tiles: tiles, Bg: bgImg, Enemies: enemies}, nil
+	return game.Level{Tiles: tiles, Bg: bgImg, Enemies: enemies}, nil
 }
 
 // LoadBackgroundFromFS reads the first imagelayer from the embedded FS.
