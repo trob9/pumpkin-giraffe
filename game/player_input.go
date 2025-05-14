@@ -1,5 +1,5 @@
-//Reads and interprets user input for movement (A/D or ←/→) and jumping (Space/Up) 
-//including single vs. double-jump timing and detection of interact-key “edge” presses.
+// Reads and interprets user input for movement (A/D or ←/→) and jumping (Space/Up)
+// including single vs. double-jump timing and detection of interact-key “edge” presses.
 package game
 
 import (
@@ -12,10 +12,18 @@ import (
 // zero if no movement key is held.
 func readHorizontalInput(moveSpeed float64) float64 {
 	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
-		return -moveSpeed // move left
+		if ebiten.IsKeyPressed(ebiten.KeyShiftLeft) {
+			return -moveSpeed * 1.5 // move left with mult
+		} else {
+			return -moveSpeed // move left
+		}
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyRight) || ebiten.IsKeyPressed(ebiten.KeyD) {
-		return moveSpeed // move right
+		if ebiten.IsKeyPressed(ebiten.KeyShiftLeft) {
+			return +moveSpeed * 1.5 // move right with mult
+		} else {
+			return +moveSpeed // move right
+		}
 	}
 	return 0 // no horizontal input
 }
