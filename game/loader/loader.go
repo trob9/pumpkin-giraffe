@@ -1,3 +1,5 @@
+// Loads level JSON (and any related resources) from the
+// embedded levels directory and returns fully populated Level structs.
 package loader
 
 import (
@@ -6,7 +8,7 @@ import (
 	"io/fs"
 	"path"
 
-	"PumpkinGiraffe/game"
+	"github.com/Trob999/PumpkinGiraffe/game"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"

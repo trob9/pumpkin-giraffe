@@ -1,6 +1,5 @@
-// Package game contains all the core logic and data structures for Pumpkin Giraffe.
-// It defines the Player character’s behavior, on-screen dimensions, physics parameters,
-// and loading routines for graphics and animations.
+//Core player logic: world-space position, physics (gravity, collision with walls/floor), 
+//movement, respawning, pumpkin pickup, animation state, and sound-effect playback for footsteps, jumps, landings, etc.
 package game
 
 import (

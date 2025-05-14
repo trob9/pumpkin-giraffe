@@ -1,3 +1,5 @@
+//Defines the Enemy type (position, patrol range, animation frames) 
+//and its Update/Draw methods for walking-skull patrol logic and sprite animation.
 package game
 
 import (

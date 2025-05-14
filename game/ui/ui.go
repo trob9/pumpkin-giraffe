@@ -1,3 +1,5 @@
+//Implements a simple on-screen message system (floating, fading text) 
+//and helper functions for drawing UI elements (buttons, prompts) at the proper scale.
 package ui
 
 import (

@@ -1,3 +1,5 @@
+//Chooses and draws the correct player image each frame (idle, walk, jump or interact pose), 
+//splits sprite sheets into frames, and advances the blink/idle cycle.
 package game
 
 import (

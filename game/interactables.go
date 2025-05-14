@@ -1,3 +1,6 @@
+//Maps tile-IDs to logical classes (barrels, pumpkin barrels, triggers), 
+//loads the shared pumpkin image, and implements per-tile “use” handlers 
+//(e.g. popping out a pumpkin, re-dropping pumpkins).
 package game
 
 import (

@@ -1,11 +1,11 @@
 package main
 
 import (
-	"PumpkinGiraffe/game"
-	aud "PumpkinGiraffe/game/audio" // aliased as "aud" because the ebitengine also has an "audio" package
-	"PumpkinGiraffe/game/loader"
+	"github.com/Trob999/PumpkinGiraffe/game"
+	aud "github.com/Trob999/PumpkinGiraffe/game/audio"
+	"github.com/Trob999/PumpkinGiraffe/game/loader"
+	"github.com/Trob999/PumpkinGiraffe/game/ui"
 
-	"PumpkinGiraffe/game/ui"
 	"embed"
 	"fmt"
 	"image"

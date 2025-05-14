@@ -1,3 +1,5 @@
+//Reads and interprets user input for movement (A/D or ←/→) and jumping (Space/Up) 
+//including single vs. double-jump timing and detection of interact-key “edge” presses.
 package game
 
 import (

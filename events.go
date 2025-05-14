@@ -1,6 +1,6 @@
 package main
 
-import "PumpkinGiraffe/game"
+import "github.com/Trob999/PumpkinGiraffe/game"
 
 // PumpkinSystem handles everything related to pumpkins in the game world:
 // spawning them when conditions are met, applying gravity each frame,
