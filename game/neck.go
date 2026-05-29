@@ -40,11 +40,6 @@ const (
 
 	// neckHoistSpeed is how fast (px/frame) the body rises during the hoist.
 	neckHoistSpeed = 3.0
-
-	// neckBaseTop is the first sprite row (from the body's top) that the shoulder
-	// mask starts covering. 0 means cover the whole original head box so no ear
-	// tips or face pixels remain once the real head lifts off.
-	neckBaseTop = 0.0
 )
 
 // neckTan and neckOutline are sampled from the giraffe sprite: the golden body
@@ -159,22 +154,24 @@ func (n *Neck) evaluateHook(p *Player) {
 	headLeft := p.X
 	headRight := p.X + p.Width
 	headCX := p.X + p.Width/2
-
 	ts := float64(TileSize)
 
-	// 1) Tile floors: scan the tile row at the head's top across the head's
-	//    horizontal span. A solid tile whose TOP edge sits within the head box
-	//    (and which has empty space directly above it) is a ledge we can hook.
-	tyHead := int(headTop / ts)
-	for _, ty := range []int{tyHead, tyHead + 1} {
-		surfaceTop := float64(ty) * ts
-		// The head must straddle this surface's top edge: head top at/above it,
-		// head bottom at/below it.
-		if surfaceTop < headTop-2 || surfaceTop > headBottom+2 {
-			continue
-		}
-		for tx := int(headLeft / ts); tx <= int(headRight/ts); tx++ {
-			if isWall(tx, ty) && !isWall(tx, ty-1) {
+	// A surface hooks when its top edge sits within the head box — i.e. the head
+	// has risen so it's hooked over the lip (top of the head at/above the edge,
+	// the head straddling it). The band is generous so it triggers reliably.
+	const slack = 4.0
+	straddles := func(surfaceTop float64) bool {
+		return surfaceTop >= headTop-slack && surfaceTop <= headBottom+slack
+	}
+
+	// 1) Tile ledges: a solid tile with empty space directly above it, somewhere
+	//    under the head's horizontal span.
+	for tx := int(headLeft / ts); tx <= int(headRight/ts); tx++ {
+		for ty := int((headTop - slack) / ts); ty <= int((headBottom+slack)/ts); ty++ {
+			if !isWall(tx, ty) || isWall(tx, ty-1) {
+				continue // not a hookable ledge surface
+			}
+			if surfaceTop := float64(ty) * ts; straddles(surfaceTop) {
 				n.hooked = true
 				n.hookY = surfaceTop
 				return
@@ -182,25 +179,18 @@ func (n *Neck) evaluateHook(p *Player) {
 		}
 	}
 
-	// 2) Moving platforms: head's center over the platform span and the head
-	//    top straddling the platform's top edge.
+	// 2) Moving platforms: head centred over the span and straddling the top.
 	for _, mp := range Levels[CurrentLevel].Platforms {
-		if headCX < mp.X || headCX > mp.X+mp.W {
-			continue
-		}
-		if mp.Y >= headTop-2 && mp.Y <= headBottom+2 {
+		if headCX >= mp.X && headCX <= mp.X+mp.W && straddles(mp.Y) {
 			n.hooked = true
 			n.hookY = mp.Y
 			return
 		}
 	}
 
-	// 3) Boulders: same idea, hook over the top of a boulder.
+	// 3) Boulders.
 	for _, b := range Levels[CurrentLevel].Boulders {
-		if headCX < b.X || headCX > b.X+b.W {
-			continue
-		}
-		if b.Y >= headTop-2 && b.Y <= headBottom+2 {
+		if headCX >= b.X && headCX <= b.X+b.W && straddles(b.Y) {
 			n.hooked = true
 			n.hookY = b.Y
 			return
@@ -242,79 +232,56 @@ func (n *Neck) runHoist(p *Player) {
 	}
 }
 
-// Draw renders the extended neck and the lifted head on top of the body sprite.
-// It is called from the player Draw path only when the neck is Active().
+// Draw renders the whole giraffe while the neck is extended: the lower body in
+// place, a thin neck column rising from the shoulders, and the head lifted by
+// n.length. It is called INSTEAD of the normal sprite draw (player_sprite.go),
+// so there is no original head left at the shoulders to mask — the old
+// full-width mask (which showed as two boxes either side of the neck) is gone.
 //
-//	screen     — render target.
-//	bodyImg    — the sprite frame currently chosen for the player (idle/walk/etc).
-//	px, py     — the body's screen-space top-left (already camera-adjusted).
-//
-// The head is the top neckHeadRows of bodyImg, sub-imaged out and re-drawn at
-// the top of the neck. The neck itself is a thin tan column with a 1px black
-// outline, drawn between the body's neck-base and the lifted head.
+//	bodyImg — the current sprite frame (idle/walk/jump). We slice the head
+//	          (top neckHeadRows) and body (the rest) from it using the frame's
+//	          OWN bounds origin, so walk frames (which live at x-offsets inside
+//	          their sheet) slice correctly instead of coming out empty.
+//	px, py  — the body's screen-space top-left (already camera-adjusted).
 func (n *Neck) Draw(screen *ebiten.Image, bodyImg *ebiten.Image, px, py float64) {
 	if n.length <= 0.01 {
 		return
 	}
+	b := bodyImg.Bounds()
+	const headH = neckHeadRows // rows 0..6 = head; 7..15 = neck-base + body + legs
 
-	// The neck column rises from just below the head region (the sprite's
-	// natural neck pinch is around row neckHeadRows) up by n.length.
-	// Centre the column horizontally on the sprite.
-	colX := px + (16-neckWidth)/2
-	colTopY := py - n.length             // top of the column = where head base goes
-	colBottomY := py + float64(neckHeadRows) // overlap into the body a touch
+	// 1) Lower body (everything below the head) at its normal position.
+	bodyRect := image.Rect(b.Min.X, b.Min.Y+headH, b.Min.X+16, b.Min.Y+16)
+	body := bodyImg.SubImage(bodyRect).(*ebiten.Image)
+	opBody := &ebiten.DrawImageOptions{}
+	opBody.GeoM.Translate(px, py+float64(headH))
+	screen.DrawImage(body, opBody)
 
-	colH := colBottomY - colTopY
-	if colH < 0 {
-		colH = 0
-	}
-
-	pix := neckPixelImage()
-
-	// First, mask the body's ORIGINAL head. The body sprite was already drawn in
-	// full, so its own head/ears/face still sit at the top rows of the body. If we
-	// left them, you'd see a second face peeking out at the shoulders once the
-	// real head lifts away. We erase those top rows with a solid tan block (the
-	// neck base / upper chest) plus a 1px black outline at the very top, so the
-	// shoulders read as the bottom of the neck rather than a leftover head.
-	maskTopY := py + neckBaseTop // skip the topmost rows that the sprite leaves transparent
-	maskH := float64(neckHeadRows) - neckBaseTop
-	if maskH > 0 {
-		// black cap line across the shoulders
+	// 2) Thin neck column filling the gap between the lifted head and the body's
+	//    neck-base. Matches the sprite's neck: tan core (cols 6-9) inside a black
+	//    outline (cols 5-10).
+	headTopY := py - n.length
+	neckTopY := headTopY + float64(headH) - 1 // tuck just under the head
+	neckBotY := py + float64(headH) + 1        // overlap into the body's neck rows
+	if neckH := neckBotY - neckTopY; neckH > 0 {
+		pix := neckPixelImage()
 		opO := &ebiten.DrawImageOptions{}
-		opO.GeoM.Scale(16, maskH)
-		opO.GeoM.Translate(px, maskTopY)
+		opO.GeoM.Scale(6, neckH)
+		opO.GeoM.Translate(px+5, neckTopY)
 		opO.ColorScale.ScaleWithColor(neckOutline)
 		screen.DrawImage(pix, opO)
-		// tan chest just inside the outline
+
 		opT := &ebiten.DrawImageOptions{}
-		opT.GeoM.Scale(14, maskH-1)
-		opT.GeoM.Translate(px+1, maskTopY)
+		opT.GeoM.Scale(4, neckH)
+		opT.GeoM.Translate(px+6, neckTopY)
 		opT.ColorScale.ScaleWithColor(neckTan)
 		screen.DrawImage(pix, opT)
 	}
 
-	// Black outline column (1px wider each side).
-	{
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Scale(float64(neckWidth+2), colH)
-		op.GeoM.Translate(colX-1, colTopY)
-		op.ColorScale.ScaleWithColor(neckOutline)
-		screen.DrawImage(pix, op)
-	}
-	// Tan fill column.
-	{
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Scale(float64(neckWidth), colH)
-		op.GeoM.Translate(colX, colTopY)
-		op.ColorScale.ScaleWithColor(neckTan)
-		screen.DrawImage(pix, op)
-	}
-
-	// Draw the head (top neckHeadRows of the body sprite) at the top of the neck.
-	headRect := image.Rect(0, 0, 16, neckHeadRows)
+	// 3) Head (top headH rows of the current frame) lifted up by n.length.
+	headRect := image.Rect(b.Min.X, b.Min.Y, b.Min.X+16, b.Min.Y+headH)
 	head := bodyImg.SubImage(headRect).(*ebiten.Image)
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(px, colTopY)
-	screen.DrawImage(head, op)
+	opHead := &ebiten.DrawImageOptions{}
+	opHead.GeoM.Translate(px, headTopY)
+	screen.DrawImage(head, opHead)
 }

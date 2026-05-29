@@ -65,14 +65,14 @@ func (p *Player) Draw(screen *ebiten.Image, camX, camY float64) {
 		p.idleIndex = (p.idleIndex + 1) % idleFrames
 	}
 
-	// 4) Draw the chosen sprite onto the screen
-	screen.DrawImage(img, op)
-
-	// 5) If the neck-extend ability is active, draw the growing neck + lifted
-	//    head on top of the body. When the neck is fully retracted this is a
-	//    no-op, so normal rendering is unaffected.
+	// 4) Draw the player. When the neck is extended, the neck renderer draws the
+	//    whole giraffe (body + neck column + lifted head) so we must NOT also draw
+	//    the full sprite here, or its original head would show at the shoulders.
+	//    When retracted, draw normally.
 	if p.neck.Active() {
 		p.neck.Draw(screen, img, p.X-camX, p.Y-camY)
+	} else {
+		screen.DrawImage(img, op)
 	}
 }
 
