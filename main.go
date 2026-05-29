@@ -316,18 +316,17 @@ func (g *Game) Update() error {
 				// clear and recreate all pumpkins
 				g.pumpkins = nil
 
-				// make a brand-new player instance
+				// reload every level fresh and return to the first one, so a
+				// restart restores collected pumpkins and defeated enemies.
+				game.Levels = loadAllLevels()
+				game.CurrentLevel = 0
+				applySpawn(0)
+
+				// make a brand-new player instance at the first level's spawn
 				g.player = game.NewPlayer(
 					Assets,
 					g.ui.NewMessage,
 				)
-
-				// reload the level data from JSON
-				lvlFull, err := loader.LoadLevelFS(Assets, "levels/test_level.json")
-				if err != nil {
-					log.Fatal(err)
-				}
-				game.Levels[game.CurrentLevel] = lvlFull
 
 				g.state = StatePlaying
 			}
@@ -343,6 +342,12 @@ func (g *Game) Update() error {
 
 	// 4a) Update pumpkin physics, spawning, catching, and missing logic
 	g.pumpkinSystem.Update(g)
+
+	// 4a2) Advance moving platforms before the player so a riding player is carried
+	// using this frame's fresh platform movement.
+	for _, mp := range game.Levels[game.CurrentLevel].Platforms {
+		mp.Update()
+	}
 
 	// 4b) Update the player: movement, gravity, collisions, and animation
 	g.player.Update(
@@ -403,11 +408,16 @@ func (g *Game) Update() error {
 		}
 	}
 
-	// 4e) After catching 5 pumpkins, stop the timer and finish the game
-	if !g.timerStopped && g.player.Pumpkins >= 5 {
-		g.endTime = time.Now()
-		g.timerStopped = true
-		g.state = StateFinished
+	// 4e) Collected 5 pumpkins: advance to the next level, or finish the run if
+	// this was the last level. The timer spans every level.
+	if g.player.Pumpkins >= 5 {
+		if game.CurrentLevel < len(game.Levels)-1 {
+			g.advanceLevel()
+		} else if !g.timerStopped {
+			g.endTime = time.Now()
+			g.timerStopped = true
+			g.state = StateFinished
+		}
 	}
 
 	// 4f) Smooth camera follow: center on player but clamp to level bounds
@@ -525,6 +535,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// 2) Draw the level (tiles, background, etc.) into the buffer
 	game.DrawLevel(g.buffer, g.CameraX, g.CameraY)
 
+	// 2.5) Draw moving platforms behind the player, so the giraffe stands on top
+	for _, mp := range game.Levels[game.CurrentLevel].Platforms {
+		mp.Draw(g.buffer, g.CameraX, g.CameraY)
+	}
+
 	// 3) Draw the player sprite at its world position offset by the camera
 	g.player.Draw(g.buffer, g.CameraX, g.CameraY)
 
@@ -616,6 +631,54 @@ func clamp(v, lo, hi float64) float64 {
 	return v
 }
 
+// levelFiles lists the levels in play order: the original map first, then the
+// three new ones in gentle-ramp difficulty.
+var levelFiles = []string{
+	"levels/test_level.json",
+	"levels/level1.json",
+	"levels/level2.json",
+	"levels/level3.json",
+}
+
+// loadAllLevels reads every level file into a fresh slice. Used at startup and
+// on restart so a new run begins with all pumpkins and enemies restored.
+func loadAllLevels() []game.Level {
+	levels := make([]game.Level, 0, len(levelFiles))
+	for _, f := range levelFiles {
+		lvl, err := loader.LoadLevelFS(Assets, f)
+		if err != nil {
+			log.Fatal(err)
+		}
+		levels = append(levels, lvl)
+	}
+	return levels
+}
+
+// applySpawn points the player's spawn at the given level's spawn object,
+// falling back to the original default for levels that don't define one.
+func applySpawn(idx int) {
+	lvl := game.Levels[idx]
+	if lvl.SpawnX != 0 || lvl.SpawnY != 0 {
+		game.SetSpawn(lvl.SpawnX, lvl.SpawnY)
+	} else {
+		game.SetSpawn(64, 300)
+	}
+}
+
+// advanceLevel moves to the next level after the player collects 5 pumpkins:
+// reset the count, move the giraffe to the new spawn, and clear per-level pumpkin
+// state. The timer keeps running, so a run is timed across all levels.
+func (g *Game) advanceLevel() {
+	game.CurrentLevel++
+	applySpawn(game.CurrentLevel)
+	g.player.Pumpkins = 0
+	g.player.Respawn()
+	g.pumpkins = nil
+	g.pumpkinSpawned = false
+	g.pumpkinMissed = false
+	g.initialPumpkinDropped = false
+}
+
 // main is the entry point for Pumpkin Giraffe. It sets up graphics, audio, game data,
 // and then starts the Ebiten game loop.
 func main() {
@@ -626,13 +689,11 @@ func main() {
 	}
 	// Load any extra images used for interactive objects (e.g., barrels, pumpkins).
 	game.LoadInteractableAssets(Assets)
-	// Read the level layout from JSON so we know where walls, floors, and enemies go.
-	lvlFull, err := loader.LoadLevelFS(Assets, "levels/test_level.json")
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Store our single level in the global Levels slice.
-	game.Levels = []game.Level{lvlFull}
+	// Read every level layout from JSON so we know where walls, floors, enemies,
+	// moving platforms, and spawn points go. Levels play in this order.
+	game.Levels = loadAllLevels()
+	game.CurrentLevel = 0
+	applySpawn(0)
 
 	// ——— 2) Prepare sound effects ———
 	// Create an audio context at our desired sample rate.

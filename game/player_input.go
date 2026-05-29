@@ -44,6 +44,7 @@ func (p *Player) handleJumpInput(jumpSnd *audio.Player) bool {
 		// Reset jump tracking and mark as airborne
 		p.framesSinceJump = 0
 		p.OnGround = false
+		p.ridingPlatform = nil // leaving the platform when we jump off it
 
 		// Play jump sound from the start
 		jumpSnd.Rewind()

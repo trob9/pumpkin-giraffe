@@ -6,17 +6,27 @@ A tiny speedrunning platformer about a short-necked giraffe, a fistful of pumpki
 
 ## The point of the game
 
-Get to the end as fast as humanly possible.
+Grab **5 pumpkins per level, across 4 levels, as fast as humanly possible.**
 
-A timer starts the instant the level loads and runs in the top-centre of the screen down to the millisecond (`00:05.030`). When you reach the goal, the game freezes your final time and throws up a **"You did it! Your time was MM:SS.mmm"** — that number is your run. Beat it. Then beat it again.
+A timer starts the instant you begin and runs in the top-centre of the screen down to the millisecond (`00:05.030`). It does **not** reset between levels — collect your fifth pumpkin and you're whisked straight to the next map with the clock still ticking. Clear the final level and the game freezes your time and throws up a **"You did it! Your time was MM:SS.mmm"**. That single number is your whole run, start to finish. Beat it. Then beat it again.
 
-Everything in the level is built around shaving frames:
+Because every pumpkin is mandatory, the route *is* the puzzle: the fastest path that still touches all five, on every map.
+
+Everything is built around shaving frames off that route:
 
 - **Sprint** (hold Shift) multiplies your speed by 2.5×. You'll want it held basically the whole run, but it makes platforms and pits far less forgiving — the classic speedrun trade of control for pace.
-- **Pumpkins** (the orange clusters on the ledges) are optional. Grabbing one bumps the `Pumpkins` counter top-right and plays a satisfying *pop*, but it costs you time. Pure speed runs ignore them; 100% runs detour for every last one. Two different races, same level.
-- **Skull enemies** patrol the platforms. Touch one and you die and respawn — a death is a run-killer, so they double as risk gates on the fast lines.
+- **Moving platforms** slide back and forth on fixed paths. They bridge gaps and lift you to high pumpkins, but they only go as fast as they go — mistime your hop and you wait, or fall. Riding them well is most of the time save on the later maps.
+- **Skull enemies** patrol the platforms. Touch one from the side and you die and respawn — a death is a run-killer. Land on their heads, though, and you stomp them and bounce.
+- **Pumpkins** are the goal, not a detour: five per level, scattered on ground, ledges, and out over the void where only a platform ride will reach them.
 
-So there are really two ways to play: **any%** (touch nothing, just reach the goal in the lowest time) and **100%** (collect every pumpkin *and* keep the time low). The fun is that the fastest route and the greediest route are almost never the same.
+## The four levels
+
+The original map first, then three new ones on a gentle difficulty ramp:
+
+1. **Pumpkin Patch** — the original level.
+2. **Rolling Start** — gentle intro: mostly solid ground, two slow platforms bridging small gaps.
+3. **Gap Gauntlet** — more gaps, a vertical lift, a torii staircase, pumpkins that need a platform ride.
+4. **Skyline Sprint** — sparse ground, fast platforms, pumpkins out over the void and up on the high torii.
 
 ## Controls
 

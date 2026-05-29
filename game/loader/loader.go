@@ -24,16 +24,37 @@ type tiledMap struct {
 }
 
 // tiledLayer represents one layer inside a Tiled map.
-// - Type: "tilelayer" (for grid data) or "imagelayer" (for background images).
+// - Type: "tilelayer" (grid data), "imagelayer" (background), or "objectgroup" (objects).
 // - Data: flat array of tile IDs, only for tile layers.
 // - Image: filename for image layers.
 // - OffsetX/Y: position to draw image layers.
+// - Objects: spawn points and moving platforms, only for object layers.
 type tiledLayer struct {
-	Type    string  `json:"type"`
-	Data    []int   `json:"data,omitempty"`
-	Image   string  `json:"image,omitempty"`
-	OffsetX float64 `json:"offsetx,omitempty"`
-	OffsetY float64 `json:"offsety,omitempty"`
+	Type    string        `json:"type"`
+	Data    []int         `json:"data,omitempty"`
+	Image   string        `json:"image,omitempty"`
+	OffsetX float64       `json:"offsetx,omitempty"`
+	OffsetY float64       `json:"offsety,omitempty"`
+	Objects []tiledObject `json:"objects,omitempty"`
+}
+
+// tiledObject is one entry in an object layer. A "spawn"-named object marks the
+// player's start; any other rectangle object is treated as a moving platform,
+// configured by its custom properties (axis, range, speed).
+type tiledObject struct {
+	Name       string          `json:"name"`
+	X          float64         `json:"x"`
+	Y          float64         `json:"y"`
+	Width      float64         `json:"width"`
+	Height     float64         `json:"height"`
+	Properties []tiledProperty `json:"properties"`
+}
+
+// tiledProperty is a Tiled custom property. Value is decoded as interface{},
+// so JSON strings arrive as string and JSON numbers as float64.
+type tiledProperty struct {
+	Name  string      `json:"name"`
+	Value interface{} `json:"value"`
 }
 
 // LoadLevelFromFS reads a Tiled JSON file from fsys and returns a 2D tile ID grid.
@@ -130,12 +151,80 @@ func LoadLevelFS(fsys fs.FS, path string) (game.Level, error) {
 		}
 	}
 
+	// 4) Scan object layers for the spawn point and any moving platforms.
+	platforms, spawnX, spawnY, err := loadObjects(fsys, path)
+	if err != nil {
+		return game.Level{}, err
+	}
+
 	// Return the assembled Level struct
 	return game.Level{
-		Tiles:   tiles,
-		Bg:      bgImg,
-		Enemies: enemies,
+		Tiles:     tiles,
+		Bg:        bgImg,
+		Enemies:   enemies,
+		Platforms: platforms,
+		SpawnX:    spawnX,
+		SpawnY:    spawnY,
 	}, nil
+}
+
+// loadObjects re-reads the map and walks any object layers. An object named
+// "spawn" sets the player start; every other object becomes a moving platform
+// built from its axis/range/speed properties (with sensible defaults).
+func loadObjects(fsys fs.FS, pathToJSON string) (platforms []*game.MovingPlatform, spawnX, spawnY float64, err error) {
+	data, err := fs.ReadFile(fsys, pathToJSON)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	var tm struct{ Layers []tiledLayer }
+	if err := json.Unmarshal(data, &tm); err != nil {
+		return nil, 0, 0, err
+	}
+
+	for _, lyr := range tm.Layers {
+		if lyr.Type != "objectgroup" {
+			continue
+		}
+		for _, obj := range lyr.Objects {
+			if obj.Name == "spawn" {
+				spawnX, spawnY = obj.X, obj.Y
+				continue
+			}
+
+			// Defaults are overridden by any matching custom property.
+			axis := "x"
+			rng := 64.0
+			speed := 0.6
+			for _, p := range obj.Properties {
+				switch p.Name {
+				case "axis":
+					if s, ok := p.Value.(string); ok {
+						axis = s
+					}
+				case "range":
+					if f, ok := p.Value.(float64); ok {
+						rng = f
+					}
+				case "speed":
+					if f, ok := p.Value.(float64); ok {
+						speed = f
+					}
+				}
+			}
+
+			w := obj.Width
+			if w <= 0 {
+				w = float64(game.TileSize)
+			}
+			h := obj.Height
+			if h <= 0 {
+				h = float64(game.TileSize)
+			}
+			platforms = append(platforms,
+				game.NewMovingPlatform(obj.X, obj.Y, w, h, rng, speed, axis))
+		}
+	}
+	return platforms, spawnX, spawnY, nil
 }
 
 // LoadBackgroundFromFS reads the same JSON, but looks for the first imagelayer.

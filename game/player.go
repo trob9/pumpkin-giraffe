@@ -90,6 +90,10 @@ type Player struct {
 
 	// prevUse — remembers the previous frame’s E-key state to detect when it’s first pressed
 	prevUse bool
+
+	// ridingPlatform — the moving platform the player is currently standing on (nil if none).
+	// Used to carry the player along with the platform's movement each frame.
+	ridingPlatform *MovingPlatform
 }
 
 // spawnX and spawnY define the starting position when a new Player is created.
@@ -97,6 +101,12 @@ var (
 	spawnX float64 = 64
 	spawnY float64 = 300
 )
+
+// SetSpawn updates the world coordinates the player spawns and respawns at.
+// Levels call this when they load so each map can place the giraffe where it wants.
+func SetSpawn(x, y float64) {
+	spawnX, spawnY = x, y
+}
 
 // NewPlayer loads all the sprite sheets and returns a fresh Player at the spawn point.
 // It also takes an onInteract callback so the player can show messages when using barrels.
@@ -242,6 +252,13 @@ func (p *Player) Update(
 		p.X = ScreenWidth - p.Width
 	}
 
+	// Carry the player along with the moving platform they are riding (if any),
+	// so the platform's motion this frame moves them too. Detected fresh below.
+	if p.ridingPlatform != nil {
+		p.X += p.ridingPlatform.DeltaX()
+		p.Y += p.ridingPlatform.DeltaY()
+	}
+
 	// Apply gravity: accelerate downward, cap terminal velocity, then move
 	p.VelY += 0.26
 	if p.VelY > 3 {
@@ -261,8 +278,34 @@ func (p *Player) Update(
 		p.Y = float64(ty)*ts - p.Height
 		p.VelY = 0
 		p.OnGround = true
+		p.ridingPlatform = nil // tile floor takes priority over platforms
 	} else {
 		p.OnGround = false
+	}
+
+	// One-way moving-platform landing: if not already standing on a tile floor
+	// and falling, catch the player on any platform their feet cross from above,
+	// and remember it so the carry step above can move them with it next frame.
+	if !p.OnGround {
+		p.ridingPlatform = nil
+		if p.VelY >= 0 {
+			feet := p.Y + p.Height
+			prevFeet := feet - p.VelY
+			cx := p.X + p.Width/2 // land when the player's center is over the platform
+			for _, mp := range Levels[CurrentLevel].Platforms {
+				if cx < mp.X || cx > mp.X+mp.W {
+					continue
+				}
+				top := mp.Y
+				if prevFeet <= top+2 && feet >= top {
+					p.Y = top - p.Height
+					p.VelY = 0
+					p.OnGround = true
+					p.ridingPlatform = mp
+					break
+				}
+			}
+		}
 	}
 
 	// Play landing sound only on the first frame touching ground

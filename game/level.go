@@ -19,9 +19,12 @@ const (
 // Level represents a single game map: a grid of tile IDs, an optional
 // background image, and a list of enemies placed via EnemySpawnID tiles.
 type Level struct {
-	Tiles   [][]int       // 2D array of tile IDs; 0 = empty, >0 = specific tile
-	Bg      *ebiten.Image // optional fullscreen background graphic
-	Enemies []*Enemy      // active enemies for this level
+	Tiles     [][]int           // 2D array of tile IDs; 0 = empty, >0 = specific tile
+	Bg        *ebiten.Image     // optional fullscreen background graphic
+	Enemies   []*Enemy          // active enemies for this level
+	Platforms []*MovingPlatform // moving platforms read from the map's object layer
+	SpawnX    float64           // player start X in world pixels (0 = use default)
+	SpawnY    float64           // player start Y in world pixels (0 = use default)
 }
 
 var (
