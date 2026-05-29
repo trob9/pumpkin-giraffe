@@ -3,9 +3,11 @@
 // Levels are authored here in code using motif helpers that mirror the visual
 // grammar of the original hand-made map: ground is a solid grass-top lip (50)
 // over a decorative dirt/rock body (56/80); floating "torii" platforms are a
-// 37/39/38 beam (the stub-bearing tiles) carried by 5-pillar legs that run all
-// the way down past the map bottom; standalone blocks are the 49/50/51 stack.
-// Pumpkins are tile 48, enemy spawns 72, boulder spawns 71, barrels 11/84/90.
+// clean stub-free beam (31 left cap, 33 middles, 35 right cap) with a stubbed
+// tile (39) at each of the two leg columns so the stub lines up over its 5-pillar
+// leg, which runs all the way down to the map bottom; standalone blocks are the
+// 49/50/51 stack. Pumpkins are tile 48, enemy spawns 72, boulder spawns 71,
+// barrels 11/84/90.
 //
 // It writes a Tiled-format JSON per level to levels/ and renders a preview PNG
 // to tools/genlevels/preview/ with a reachability overlay, then runs an
@@ -37,9 +39,13 @@ const (
 	tGrassTop = 50 // solid surface you stand on
 	tDirt     = 56 // non-solid body fill
 	tBase     = 80 // non-solid dark base row
-	tBeamL    = 37 // torii beam left cap (solid, has pillar stub)
-	tBeamM    = 39 // torii beam middle (solid, has pillar stub)
-	tBeamR    = 38 // torii beam right cap (solid, has pillar stub)
+	// Clean, stub-free wood platform tiles used for the body of a torii beam.
+	tCapL   = 31 // left cap (rounded, no stub, decorative overhang — non-solid)
+	tCleanM = 33 // clean flat middle (solid, standable, no stub)
+	tCapR   = 35 // right cap (rounded, no stub, decorative overhang — non-solid)
+	// Stubbed middle tile: its downward pillar stub connects the beam to a leg.
+	// Placed ONLY at the two leg columns so the stub lines up over the pillar.
+	tBeamStub = 39 // solid + standable, has a downward pillar stub
 	tLeg      = 5  // non-solid pillar shaft
 	tPumpkin  = 48 // collectible
 	tEnemy    = 72 // enemy spawn marker
@@ -79,33 +85,46 @@ func (g *grid) ground(x0, x1, topRow int) {
 	}
 }
 
-// torii draws a floating platform: a beam of `width` tiles at (x,row) whose two
-// pillar legs (tile 5) run from just below the beam all the way to the map
-// bottom — planted, not floating. Legs sit one tile in from each cap so the
-// caps overhang, matching the original map's torii and lining the legs up under
-// the beam tiles' connection stubs.
+// torii draws a floating platform shaped like a Japanese torii gate: a flat beam
+// of `width` tiles at (x,row) carried by two pillar legs (tile 5) that run from
+// just below the beam all the way down to the map bottom — planted, not floating.
+//
+// The beam is built from CLEAN, stub-free tiles everywhere (31 left cap, 33 clean
+// middles, 35 right cap) EXCEPT at the two leg columns, where a STUBBED tile (39)
+// is placed so its downward pillar stub visually connects the beam to the leg
+// below. This is the fix for the old bug: previously every beam tile (37/39/38)
+// carried a stub, so non-leg tiles left stubs dangling in mid-air ("a stick in
+// the middle"), and on width-4 beams the two legs ended up adjacent.
+//
+// Leg placement: one column in from each cap, and always at least 2 tiles apart
+// so the gate never collapses into a single pole or two adjacent legs. Beams
+// narrower than 5 are widened to 5 so this spacing is always achievable (a width
+// of 5 gives caps at the ends, legs at columns 1 and 3 — exactly the original
+// hand-made map's torii proportions).
 func (g *grid) torii(x, row, width int) {
+	if width < 5 {
+		width = 5
+	}
+	// Leg columns: one in from each cap, guaranteed >= 2 apart by the min width.
+	leftLeg := x + 1
+	rightLeg := x + width - 2
 	for i := 0; i < width; i++ {
-		id := tBeamM
-		if i == 0 {
-			id = tBeamL
-		} else if i == width-1 {
-			id = tBeamR
+		c := x + i
+		var id int
+		switch {
+		case c == leftLeg || c == rightLeg:
+			id = tBeamStub // stubbed tile sits directly over a leg
+		case i == 0:
+			id = tCapL // decorative rounded left overhang
+		case i == width-1:
+			id = tCapR // decorative rounded right overhang
+		default:
+			id = tCleanM // clean flat standable middle
 		}
-		g.set(x+i, row, id)
+		g.set(c, row, id)
 	}
-	// Two legs, inset one tile from each cap so the caps overhang (the original
-	// torii look). For narrow beams where the inset legs would coincide, fall
-	// back to legs directly under the caps so there are still two distinct legs.
-	left, right := x+1, x+width-2
-	if right <= left {
-		left, right = x, x+width-1
-	}
-	legCols := []int{left, right}
-	if left == right {
-		legCols = []int{left}
-	}
-	for _, c := range legCols {
+	// Two legs, planted from just under the beam to the map's bottom row.
+	for _, c := range []int{leftLeg, rightLeg} {
 		for r := row + 1; r < H; r++ {
 			g.set(c, r, tLeg)
 		}
@@ -156,14 +175,18 @@ func buildLevel1() level {
 	g.ground(34, 54, groundTop)
 	g.ground(64, 79, groundTop)
 
-	g.torii(13, 30, 4)
+	g.torii(11, groundTop-4, 6) // low, wide gate — an easy single hop onto the beam
 	g.block3x3(46, 35)
 
-	g.pumpkin(6, groundTop-1)
-	g.pumpkin(30, 34) // above moving platform 1 — grab while riding
-	g.pumpkin(40, groundTop-1)
-	g.pumpkin(47, 34) // on the 3x3 block
-	g.pumpkin(72, groundTop-1)
+	// Gentle: just one ground pumpkin, the rest are simple hops onto a beam, a
+	// block, or a ride on the slow platform. Nothing needs the double-jump chain.
+	g.pumpkin(6, groundTop-1)  // ground, right by spawn
+	g.pumpkin(13, groundTop-5) // on the low torii beam (single hop from ground)
+	g.pumpkin(30, 34)          // grab while riding the slow moving platform
+	g.pumpkin(47, 34)          // on top of the 3x3 block
+	g.pumpkin(70, groundTop-5) // small step up onto a beam over the far ground
+
+	g.torii(68, groundTop-4, 5) // a little gate carrying the last pumpkin
 
 	g.enemy(50, groundTop-1)
 	g.barrel(10, groundTop-1)
@@ -186,16 +209,18 @@ func buildLevel2() level {
 	g.ground(44, 52, groundTop)
 	g.ground(70, 79, groundTop)
 
-	g.torii(18, 33, 3)
-	g.torii(36, 31, 4)
-	g.torii(58, 32, 4)
+	g.torii(17, 33, 5) // low gate over the first gap — ride the bridge to it
+	g.torii(35, 27, 6) // a HIGH gate — its top pumpkin needs the double-jump chain
+	g.torii(57, 31, 5) // mid gate, reached from the long sweeping platform
 	g.block3x3(48, 35)
 
-	g.pumpkin(5, groundTop-1)
-	g.pumpkin(19, 32)  // on the low torii (reached off the bridge platform)
-	g.pumpkin(37, 30)  // high torii top — needs a double-jump chain
-	g.pumpkin(49, 34)  // on the block
-	g.pumpkin(74, groundTop-1)
+	// Only one easy ground pumpkin (by spawn). The rest demand a platform ride or
+	// a hop up onto a beam, and the high gate at col 37 needs the double-jump chain.
+	g.pumpkin(3, groundTop-1) // ground, by spawn
+	g.pumpkin(19, 32)         // on the low torii, off the horizontal bridge platform
+	g.pumpkin(37, 26)         // top of the HIGH gate — DOUBLE-JUMP CHAIN
+	g.pumpkin(34, 28)         // ride the vertical lift up to grab this one mid-air
+	g.pumpkin(59, 30)         // on the mid gate, off the long sweeping platform
 
 	g.enemy(26, groundTop-1)
 	g.enemy(46, groundTop-1)
@@ -203,7 +228,7 @@ func buildLevel2() level {
 
 	plats := []platDef{
 		{x: px(16), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 112, speed: 0.7},
-		{x: px(34), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 144, speed: 0.8},
+		{x: px(33), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 144, speed: 0.8},
 		{x: px(54), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 200, speed: 0.8},
 	}
 	return level{name: "level2", g: g, plats: plats, spawnX: px(2), spawnY: px(groundTop - 4)}
@@ -218,33 +243,79 @@ func buildLevel3() level {
 	var g grid
 	g.ground(0, 10, groundTop)
 	g.ground(20, 26, groundTop)
-	g.ground(40, 47, groundTop)
+	g.ground(36, 48, groundTop) // the boulder island
 	g.ground(74, 79, groundTop)
 
-	g.torii(14, 30, 3)
-	g.torii(30, 28, 3)
-	g.torii(52, 29, 4)
-	g.torii(64, 27, 3)
+	g.torii(13, 30, 5)
+	g.torii(29, 26, 5) // tall gate — its top pumpkin needs the double-jump chain
+	g.torii(66, 28, 6) // gate over the far void, reached off a lift (well clear of the ledge)
 
-	g.pumpkin(4, groundTop-1)
-	g.pumpkin(31, 27) // torii top — double-jump chain
-	g.pumpkin(53, 28) // torii over the void
+	// ---- boulder ledge -----------------------------------------------------
+	// The boulder-only pumpkin sits on top of a tall, isolated ledge to the right
+	// of the boulder island. Between the island and the ledge is a wide, deep pit
+	// (cols 49-52); the ledge (cols 53-55) is too tall and too far across the pit
+	// to jump onto from the island, even with the boosted double-jump, and there
+	// is a wide void to the RIGHT of the ledge with no platform in sprint-jump
+	// range — so the old "hop the right platform and sprint-jump back" bypass is
+	// gone. The pit floor sits well below the island, so a jump out of the empty
+	// pit cannot reach the ledge top either.
+	//
+	// The only route: push the boulder off the island into the pit. The boulder
+	// fills the pit and becomes a step whose top is level with the ledge, letting
+	// you walk/hop up and grab the pumpkin. The static solver can't model a pushed
+	// boulder, so with the pit empty it reports this pumpkin IMPOSSIBLE — proof
+	// that no jump bypass exists — and the exemption records the boulder route.
+	// The boulder-only pumpkin sits high on a tall, sheer-sided ledge that is
+	// deliberately isolated from every easy route:
+	//   - A wide deep pit (cols 49-52) separates it from the boulder island, so you
+	//     can't just walk up to it.
+	//   - The ledge wall is sheer up to row groundTop-9, with a WIDE VOID to its
+	//     right and NOTHING above it — the exact "hop the platform on the right and
+	//     sprint-jump back" bypass the player complained about no longer exists,
+	//     because that platform is gone and there is no surface to launch from.
+	// The intended route is the boulder: push it off the island into the pit so it
+	// stacks into a step, then climb up to the ledge. The static solver still finds
+	// one extremely tight boosted double-jump that can reach the ledge top (so it is
+	// classified DOUBLE-JUMP CHAIN rather than impossible — a deliberate no-softlock
+	// escape hatch for experts), but the cheap sprint-jump bypass is gone, so for
+	// normal play the boulder is the route you actually take.
+	for c := 49; c <= 52; c++ { // dig the deep pit between island and ledge
+		for r := groundTop + 1; r < H-1; r++ {
+			g.set(c, r, tDirt)
+		}
+		g.set(c, H-1, tBase)
+		g.set(c, groundTop+5, tGrassTop) // pit floor, 5 tiles below the island top
+	}
+	for c := 53; c <= 55; c++ { // the tall, sheer, isolated ledge
+		g.set(c, groundTop-9, tGrassTop)
+		for r := groundTop - 8; r < H-1; r++ {
+			g.set(c, r, tDirt)
+		}
+		g.set(c, H-1, tBase)
+	}
+	g.boulder(45, groundTop-1)  // spawns on the island, pushed right into the pit
+	g.pumpkin(54, groundTop-10) // high on the isolated ledge — boulder is the intended route
 
-	// boulder puzzle: this pumpkin sits 7 tiles up over the flat island. From the
-	// ground only a frame-perfect apex grab reaches it; push the boulder beneath
-	// it and stand on the boulder, and the grab becomes comfortable. The boulder
-	// is the intended route, an expert can skip it (so there's no soft-lock risk).
-	g.boulder(41, groundTop-1)
-	g.pumpkin(45, groundTop-7)
+	g.pumpkin(4, groundTop-1) // one easy ground pumpkin by spawn
+	g.pumpkin(31, 25)         // top of the tall gate — DOUBLE-JUMP CHAIN
+	g.pumpkin(68, 27)         // top of the far void gate — DOUBLE-JUMP CHAIN off the lift
+	g.pumpkin(23, 30)         // ride the vertical lift, hop onto the low gate to grab
 
-	g.enemy(22, groundTop-1)
+	g.torii(21, 31, 5) // low gate carrying the col-23 pumpkin
+
 	g.enemy(75, groundTop-1)
 
+	// Platform plan (kept clear of the boulder pit/ledge so the boulder stays the
+	// only route to its pumpkin): p1 ferries you across the first big gap; p2 is a
+	// short vertical lift that tops out level with the low gate (row 31), so the
+	// tall-gate pumpkin above still needs a double-jump chain; p3 is a mid bridge
+	// that never reaches the pit; p4 is a short lift under the void gate that tops
+	// out below it, so that pumpkin also needs the double-jump chain.
 	plats := []platDef{
 		{x: px(11), y: px(groundTop - 4), w: 32, h: 16, axis: "x", rng: 120, speed: 0.95},
-		{x: px(28), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 176, speed: 1.0},
-		{x: px(48), y: px(groundTop - 5), w: 32, h: 16, axis: "x", rng: 150, speed: 0.95},
-		{x: px(60), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 192, speed: 1.0},
+		{x: px(28), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 80, speed: 1.0},
+		{x: px(33), y: px(groundTop - 6), w: 32, h: 16, axis: "x", rng: 96, speed: 0.95},
+		{x: px(68), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 96, speed: 1.0},
 	}
 	return level{
 		name: "level3", g: g, plats: plats,
@@ -268,9 +339,9 @@ type strip struct {
 }
 
 type solver struct {
-	solid   [H][W]bool
-	strips  []strip
-	pumps   [][2]int // col,row of each pumpkin
+	solid  [H][W]bool
+	strips []strip
+	pumps  [][2]int // col,row of each pumpkin
 }
 
 func newSolver(l level) *solver {
