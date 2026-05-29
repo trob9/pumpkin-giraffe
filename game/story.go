@@ -121,6 +121,33 @@ func (m *StoryManager) buildPlacements() {
 			m.place(whoElder, 440, groundTop, 1.1),
 		},
 	}
+	// Settle each NPC onto the actual ground of its level, so they stand on the
+	// real surface even on maps (like the original level 0) whose ground isn't
+	// at the generated levels' standard row.
+	for lvl, npcs := range m.npcsByLevel {
+		for _, n := range npcs {
+			n.y = settleToGround(lvl, n.x, n.y)
+		}
+	}
+}
+
+// settleToGround returns the top-left y at which an NPC at column x stands on
+// the topmost solid surface in its column. Scanning from the top finds the real
+// ground whether it sits at the generated maps' row 38 or higher (as on the
+// original level 0). NPC x positions are chosen in open stretches so this lands
+// on the ground rather than an overhead platform.
+func settleToGround(level int, x, startY float64) float64 {
+	if level < 0 || level >= len(Levels) {
+		return startY
+	}
+	tiles := Levels[level].Tiles
+	col := int((x + 8) / float64(TileSize))
+	for r := 0; r < len(tiles); r++ {
+		if col >= 0 && col < len(tiles[r]) && SolidTileID(tiles[r][col]) {
+			return float64(r*TileSize - TileSize) // stand on top of that tile
+		}
+	}
+	return startY
 }
 
 // place is a small constructor that pairs a character with its sprite at a

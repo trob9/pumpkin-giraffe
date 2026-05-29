@@ -678,6 +678,16 @@ func (p *Player) resolveBoulders(dx float64, eHeld bool) float64 {
 
 // isWall returns true if the tile at (tx, ty) is one of the solid “wall” tiles
 // that should stop horizontal movement or block passage.
+// SolidTileID reports whether a tile ID is one of the solid (standable/blocking)
+// tiles. Shared by wall/floor collision and by NPC ground-settling.
+func SolidTileID(id int) bool {
+	switch id {
+	case 10, 11, 27, 33, 37, 38, 39, 47, 49, 50, 51, 84, 90:
+		return true
+	}
+	return false
+}
+
 func isWall(tx, ty int) bool {
 	// get grid dimensions
 	rows := len(Levels[CurrentLevel].Tiles)
@@ -687,14 +697,7 @@ func isWall(tx, ty int) bool {
 	if ty < 0 || ty >= rows || tx < 0 || tx >= cols {
 		return false
 	}
-
-	// list of tile IDs considered solid walls
-	switch Levels[CurrentLevel].Tiles[ty][tx] {
-	case 10, 11, 27, 33, 37, 38, 39, 47, 49, 50, 51, 84, 90:
-		return true
-	default:
-		return false
-	}
+	return SolidTileID(Levels[CurrentLevel].Tiles[ty][tx])
 }
 
 // isFloor returns true for any tile that should block vertical movement,
