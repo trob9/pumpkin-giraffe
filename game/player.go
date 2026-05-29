@@ -226,12 +226,11 @@ func (p *Player) Update(
 	// Track frames since last jump to enforce double-jump window
 	p.framesSinceJump++
 
-	// Neck-extend ability (hold Q). This grows/retracts the neck, evaluates the
-	// hook, and — while hoisting — drives the player's Y itself. When a hoist is
-	// in progress we skip the normal physics so the two don't fight; otherwise
-	// the neck is purely cosmetic state and gameplay continues as usual.
-	p.neck.Update(ebiten.IsKeyPressed(ebiten.KeyQ), p)
-	if p.neck.hoisting {
+	// Neck-extend ability (hold Q). Grows/retracts the neck and evaluates the
+	// hook. While the head is hooked over a ledge (hanging) or hoisting up onto
+	// it, the neck drives the player's Y itself and returns true, so we skip the
+	// normal physics that would otherwise pull the player back down.
+	if p.neck.Update(ebiten.IsKeyPressed(ebiten.KeyQ), p) {
 		return
 	}
 

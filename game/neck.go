@@ -91,36 +91,48 @@ func (n *Neck) Active() bool {
 // Update advances the neck state machine for one frame.
 //
 //	qHeld  — whether the Q key is currently held.
-//	p      — the player, so we can read position/size and (during a hoist) move it.
+//	p      — the player, so we can read position/size and move it while
+//	         anchored (hanging) or hoisting.
 //
-// Returns true if the neck consumed control of the player this frame (i.e. a
-// hoist is in progress), so the caller can skip conflicting movement if desired.
-func (n *Neck) Update(qHeld bool, p *Player) {
+// Returns true when the neck has taken control of the player this frame — while
+// hanging by the head from a ledge, or while hoisting up onto it — so the caller
+// skips the normal physics that would otherwise drag the player back down.
+func (n *Neck) Update(qHeld bool, p *Player) bool {
 	released := n.prevQ && !qHeld
 	n.prevQ = qHeld
 
 	// A hoist, once started, runs to completion regardless of Q.
 	if n.hoisting {
 		n.runHoist(p)
-		return
+		return true
 	}
 
 	if qHeld {
-		// Grow the neck upward, clamped to max.
-		n.length += neckGrowSpeed
-		if n.length > neckMaxLen {
-			n.length = neckMaxLen
+		// Grow the neck upward until it catches on something; once hooked the
+		// length is frozen so the giraffe hangs stably by the head.
+		if !n.hooked {
+			n.length += neckGrowSpeed
+			if n.length > neckMaxLen {
+				n.length = neckMaxLen
+			}
+			n.evaluateHook(p)
 		}
-		// Re-evaluate the hook every frame as the head rises.
-		n.evaluateHook(p)
-		return
+		if n.hooked {
+			// Anchor: the head's chin rests on the ledge lip and the body hangs
+			// below by the neck's length. Kill the fall so we don't slip off —
+			// you hang here until you release Q to climb up.
+			p.VelY = 0
+			p.OnGround = false
+			p.Y = n.hookY - neckHeadRows + n.length
+			return true
+		}
+		return false // extending but not yet caught: normal physics (rise/fall)
 	}
 
-	// Q not held this frame.
+	// Q released.
 	if released && n.hooked && n.length > 0 {
-		// Begin hoisting the body up to the hooked ledge.
-		n.hoisting = true
-		return
+		n.hoisting = true // climb up onto the ledge
+		return true
 	}
 
 	// No hook (or never extended): retract smoothly.
@@ -131,6 +143,7 @@ func (n *Neck) Update(qHeld bool, p *Player) {
 			n.length = 0
 		}
 	}
+	return false
 }
 
 // headWorldTop returns the current world-space Y of the top of the head given
@@ -150,28 +163,33 @@ func (n *Neck) headWorldTop(p *Player) float64 {
 // is resting over the lip of a ledge.
 func (n *Neck) evaluateHook(p *Player) {
 	headTop := n.headWorldTop(p)
-	headBottom := headTop + neckHeadRows
+	chin := headTop + neckHeadRows // bottom of the head — the part that catches
 	headLeft := p.X
 	headRight := p.X + p.Width
 	headCX := p.X + p.Width/2
 	ts := float64(TileSize)
 
-	// A surface hooks when its top edge sits within the head box — i.e. the head
-	// has risen so it's hooked over the lip (top of the head at/above the edge,
-	// the head straddling it). The band is generous so it triggers reliably.
-	const slack = 4.0
-	straddles := func(surfaceTop float64) bool {
-		return surfaceTop >= headTop-slack && surfaceTop <= headBottom+slack
+	// The chin catches a lip when it has risen to roughly the ledge's top edge:
+	// from a touch below (catching just as it approaches) to well above (once
+	// it's cleared the lip it stays caught). Generous so you don't have to time
+	// the jump perfectly — d = how far the chin sits below the ledge top.
+	const catchBelow = 8.0  // chin still this far below the lip → catches early
+	const catchAbove = 30.0 // chin up to this far above the lip → still catches
+	catches := func(surfaceTop float64) bool {
+		d := chin - surfaceTop
+		return d <= catchBelow && d >= -catchAbove
 	}
 
 	// 1) Tile ledges: a solid tile with empty space directly above it, somewhere
 	//    under the head's horizontal span.
+	tyLo := int((chin-catchAbove)/ts) - 1
+	tyHi := int((chin+catchBelow)/ts) + 1
 	for tx := int(headLeft / ts); tx <= int(headRight/ts); tx++ {
-		for ty := int((headTop - slack) / ts); ty <= int((headBottom+slack)/ts); ty++ {
+		for ty := tyLo; ty <= tyHi; ty++ {
 			if !isWall(tx, ty) || isWall(tx, ty-1) {
 				continue // not a hookable ledge surface
 			}
-			if surfaceTop := float64(ty) * ts; straddles(surfaceTop) {
+			if surfaceTop := float64(ty) * ts; catches(surfaceTop) {
 				n.hooked = true
 				n.hookY = surfaceTop
 				return
@@ -179,9 +197,9 @@ func (n *Neck) evaluateHook(p *Player) {
 		}
 	}
 
-	// 2) Moving platforms: head centred over the span and straddling the top.
+	// 2) Moving platforms: head centred over the span, chin catching the top.
 	for _, mp := range Levels[CurrentLevel].Platforms {
-		if headCX >= mp.X && headCX <= mp.X+mp.W && straddles(mp.Y) {
+		if headCX >= mp.X && headCX <= mp.X+mp.W && catches(mp.Y) {
 			n.hooked = true
 			n.hookY = mp.Y
 			return
@@ -190,7 +208,7 @@ func (n *Neck) evaluateHook(p *Player) {
 
 	// 3) Boulders.
 	for _, b := range Levels[CurrentLevel].Boulders {
-		if headCX >= b.X && headCX <= b.X+b.W && straddles(b.Y) {
+		if headCX >= b.X && headCX <= b.X+b.W && catches(b.Y) {
 			n.hooked = true
 			n.hookY = b.Y
 			return
