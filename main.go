@@ -18,6 +18,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio"
 	"github.com/hajimehoshi/ebiten/v2/audio/wav"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
@@ -138,10 +139,14 @@ func init() {
 type GameState int
 
 const (
-	StateTitle    GameState = iota // main menu before the player starts the game
+	StateTitle    GameState = iota // (legacy) original title screen — unused
 	StatePlaying                   // game is active and running
 	StatePaused                    // game is temporarily halted
 	StateFinished                  // game has ended and results are shown
+	StateMenu                      // main menu
+	StateSettings                  // controls / key rebinding
+	StateLore                      // paged story/lore screen
+	StateHowTo                     // controls + tips screen
 )
 
 type Game struct {
@@ -173,6 +178,10 @@ type Game struct {
 	nextInteract          time.Time             // earliest time the next interaction is allowed
 	gateHintCD            int                   // cooldown so the "gate needs N" hint doesn't spam
 	ambient               *game.Ambient         // per-level atmosphere (particles + tint)
+	menuSel               int                   // selected item on the main menu
+	setSel                int                   // selected row on the settings screen
+	rebindAction          int                   // action being rebound (-1 = not listening)
+	lorePage              int                   // current page on the lore screen
 }
 
 // ambientKindFor maps a level index to its time-of-day atmosphere.
@@ -255,7 +264,8 @@ func NewGame(
 		timerStopped: false,
 
 		// current game state (title screen, playing, paused, or finished)
-		state: StateTitle,
+		state:        StateMenu,
+		rebindAction: -1,
 
 		// what the Escape key state was on the previous frame (for toggling pause)
 		prevEscape: false,
@@ -302,6 +312,22 @@ func NewGame(
 // Returns any error encountered during frame processing.
 
 func (g *Game) Update() error {
+	// Front-end menu screens are handled separately (see menu.go) and return early.
+	switch g.state {
+	case StateMenu:
+		g.updateMenu()
+		return nil
+	case StateSettings:
+		g.updateSettings()
+		return nil
+	case StateLore:
+		g.updateLore()
+		return nil
+	case StateHowTo:
+		g.updateSimpleScreen(StateHowTo)
+		return nil
+	}
+
 	// 1) Pause and resume when Escape is pressed
 	//    - Detect the instant the key goes down (edge detect)
 	//    - Toggle between Playing and Paused states
@@ -319,6 +345,13 @@ func (g *Game) Update() error {
 		}
 	}
 	g.prevEscape = esc
+
+	// 1b) From a paused or finished screen, M returns to the main menu.
+	if (g.state == StatePaused || g.state == StateFinished) &&
+		inpututil.IsKeyJustPressed(ebiten.KeyM) {
+		g.state = StateMenu
+		return nil
+	}
 
 	// 2) Advance any on-screen messages (they float/fade over time)
 	//    Ebiten calls Update about 60 times per second
@@ -413,7 +446,7 @@ func (g *Game) Update() error {
 	)
 
 	// 4c) Handle interaction key (E) with one-second cooldown
-	use := ebiten.IsKeyPressed(ebiten.KeyE)
+	use := game.Down(game.ActInteract)
 	now := time.Now()
 	if use && !g.prevInteract && now.After(g.nextInteract) && g.player.IsBesideInteractableObject() {
 		// make the player show the interact pose for one frame
@@ -527,6 +560,22 @@ func (g *Game) Update() error {
 // screen, or active gameplay). It handles UI overlays, buttons, world
 // drawing, and the HUD (pumpkin count and timer).
 func (g *Game) Draw(screen *ebiten.Image) {
+	// Front-end menu screens (see menu.go).
+	switch g.state {
+	case StateMenu:
+		g.drawMenu(screen)
+		return
+	case StateSettings:
+		g.drawSettings(screen)
+		return
+	case StateLore:
+		g.drawLore(screen)
+		return
+	case StateHowTo:
+		g.drawHowTo(screen)
+		return
+	}
+
 	switch g.state {
 	case StateTitle:
 		// Title screen: clear to black and show instructions + Start button
@@ -825,6 +874,8 @@ func main() {
 	// Load HUD images.
 	heartFull = loadImage("assets/ui/heart_full.png")
 	heartEmpty = loadImage("assets/ui/heart_empty.png")
+	// Load any saved key rebindings (falls back to defaults).
+	loadKeybinds()
 	// Read every level layout from JSON so we know where walls, floors, enemies,
 	// moving platforms, and spawn points go. Levels play in this order.
 	game.Levels = loadAllLevels()

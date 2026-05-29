@@ -11,19 +11,16 @@ import (
 // and returns the desired horizontal speed: negative for left, positive for right,
 // zero if no movement key is held.
 func readHorizontalInput(moveSpeed float64) float64 {
-	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
-		if ebiten.IsKeyPressed(ebiten.KeyShiftLeft) {
-			return -moveSpeed * 2.5 // move left with mult
-		} else {
-			return -moveSpeed // move left
-		}
+	// Sprint multiplies speed; arrow keys / right-shift are always-on alternates.
+	mult := 1.0
+	if Down(ActSprint) || ebiten.IsKeyPressed(ebiten.KeyShiftRight) {
+		mult = 2.5
 	}
-	if ebiten.IsKeyPressed(ebiten.KeyRight) || ebiten.IsKeyPressed(ebiten.KeyD) {
-		if ebiten.IsKeyPressed(ebiten.KeyShiftLeft) {
-			return +moveSpeed * 2.5 // move right with mult
-		} else {
-			return +moveSpeed // move right
-		}
+	if Down(ActLeft) || ebiten.IsKeyPressed(ebiten.KeyLeft) {
+		return -moveSpeed * mult
+	}
+	if Down(ActRight) || ebiten.IsKeyPressed(ebiten.KeyRight) {
+		return +moveSpeed * mult
 	}
 	return 0 // no horizontal input
 }
@@ -34,7 +31,7 @@ func readHorizontalInput(moveSpeed float64) float64 {
 // It resets jump timers, plays the jump sound, and returns true when a jump occurs.
 func (p *Player) handleJumpInput(jumpSnd *audio.Player) bool {
 	// Only allow jumping when standing on something
-	if p.OnGround && (ebiten.IsKeyPressed(ebiten.KeySpace) || ebiten.IsKeyPressed(ebiten.KeyUp)) {
+	if p.OnGround && (Down(ActJump) || ebiten.IsKeyPressed(ebiten.KeyUp)) {
 		// If within the double-jump window but not too soon (to prevent immediate re-jump)
 		if p.framesSinceJump > 5 && p.framesSinceJump <= doubleJumpWindow {
 			p.VelY = doubleJumpVel // stronger second jump

@@ -322,7 +322,7 @@ func (p *Player) Update(
 	// hook. While the head is hooked over a ledge (hanging) or hoisting up onto
 	// it, the neck drives the player's Y itself and returns true, so we skip the
 	// normal physics that would otherwise pull the player back down.
-	if p.neck.Update(ebiten.IsKeyPressed(ebiten.KeyQ), p) {
+	if p.neck.Update(Down(ActNeck), p) {
 		return
 	}
 
@@ -336,7 +336,7 @@ func (p *Player) Update(
 		if p.attackTimer == 0 {
 			p.attackCD = attackCooldown
 		}
-	} else if p.attackCD == 0 && ebiten.IsKeyPressed(ebiten.KeyF) {
+	} else if p.attackCD == 0 && Down(ActAttack) {
 		p.attackTimer = attackDuration
 	}
 
@@ -506,7 +506,7 @@ func (p *Player) Update(
 	}
 	// Boulders: only push while E is held; otherwise a boulder is a solid wall.
 	// Pushing is slow and constant (sprint doesn't speed it up).
-	eHeld := ebiten.IsKeyPressed(ebiten.KeyE)
+	eHeld := Down(ActInteract)
 	p.VelX = p.resolveBoulders(p.VelX, eHeld)
 	p.X += p.VelX
 
