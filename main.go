@@ -170,6 +170,7 @@ type Game struct {
 	accumulated           time.Duration         // total time spent paused
 	pumpkinSystem         *PumpkinSystem        // manager for spawning and updating pumpkins
 	nextInteract          time.Time             // earliest time the next interaction is allowed
+	gateHintCD            int                   // cooldown so the "gate needs N" hint doesn't spam
 }
 
 // NewGame constructs and wires up the Game, including the onInteract callback.
@@ -455,16 +456,26 @@ func (g *Game) Update() error {
 		}
 	}
 
-	// 4e) Collected 5 pumpkins: advance to the next level, or finish the run if
-	// this was the last level. The timer spans every level.
-	if g.player.Pumpkins >= 5 {
-		if game.CurrentLevel < len(game.Levels)-1 {
-			g.advanceLevel()
-		} else if !g.timerStopped {
-			g.endTime = time.Now()
-			g.timerStopped = true
-			g.state = StateFinished
+	// 4e) Progression. With a gate, you advance by reaching it carrying enough
+	// pumpkins to pay its toll (pumpkins are spendable currency). Gateless levels
+	// fall back to the legacy "collect 5" auto-advance.
+	if g.gateHintCD > 0 {
+		g.gateHintCD--
+	}
+	if gate := lvl.Gate; gate != nil {
+		gate.Update()
+		if g.player.Rect().Overlaps(gate.Rect()) {
+			if g.player.Pumpkins >= gate.Required {
+				g.player.Pumpkins -= gate.Required // pay the toll
+				g.advanceOrFinish()
+			} else if g.gateHintCD == 0 {
+				g.ui.NewMessage(fmt.Sprintf("The gate needs %d pumpkins (you have %d).",
+					gate.Required, g.player.Pumpkins))
+				g.gateHintCD = 150
+			}
 		}
+	} else if g.player.Pumpkins >= 5 {
+		g.advanceOrFinish()
 	}
 
 	// 4f) Smooth camera follow: center on player but clamp to level bounds
@@ -582,7 +593,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// 2) Draw the level (tiles, background, etc.) into the buffer
 	game.DrawLevel(g.buffer, g.CameraX, g.CameraY)
 
-	// 2.5) Draw moving platforms and boulders behind the player
+	// 2.5) Draw the end-of-level gate, moving platforms, and boulders
+	if gate := game.Levels[game.CurrentLevel].Gate; gate != nil {
+		gate.Draw(g.buffer, g.CameraX, g.CameraY, g.player.Pumpkins >= gate.Required)
+	}
 	for _, mp := range game.Levels[game.CurrentLevel].Platforms {
 		mp.Draw(g.buffer, g.CameraX, g.CameraY)
 	}
@@ -731,12 +745,24 @@ func applySpawn(idx int) {
 func (g *Game) advanceLevel() {
 	game.CurrentLevel++
 	applySpawn(game.CurrentLevel)
-	g.player.Pumpkins = 0
+	// Pumpkins persist as currency across levels; reaching a gate heals you.
+	g.player.Health = game.MaxHealth
 	g.player.Respawn()
 	g.pumpkins = nil
 	g.pumpkinSpawned = false
 	g.pumpkinMissed = false
 	g.initialPumpkinDropped = false
+}
+
+// advanceOrFinish moves to the next level, or ends the run if this was the last.
+func (g *Game) advanceOrFinish() {
+	if game.CurrentLevel < len(game.Levels)-1 {
+		g.advanceLevel()
+	} else if !g.timerStopped {
+		g.endTime = time.Now()
+		g.timerStopped = true
+		g.state = StateFinished
+	}
 }
 
 // killAndRestartLevel handles death: reload the current level fresh and respawn

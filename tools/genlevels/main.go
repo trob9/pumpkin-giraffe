@@ -159,6 +159,9 @@ type level struct {
 	g              grid
 	plats          []platDef
 	spawnX, spawnY int
+	// gate: end-of-level portal. gateRequired pumpkins are spent to pass.
+	gateX, gateY int
+	gateRequired int
 	// pumpkins the solver is allowed to skip (e.g. reachable only by pushing a
 	// boulder, which the static solver can't model). Keyed by "col,row".
 	exemptPumpkins map[string]bool
@@ -195,7 +198,8 @@ func buildLevel1() level {
 		{x: px(26), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 80, speed: 0.6},
 		{x: px(56), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 96, speed: 0.6},
 	}
-	return level{name: "level1", g: g, plats: plats, spawnX: px(2), spawnY: px(groundTop - 4)}
+	return level{name: "level1", g: g, plats: plats, spawnX: px(2), spawnY: px(groundTop - 4),
+		gateX: px(75), gateY: px(groundTop - 3), gateRequired: 3}
 }
 
 // =====================================================================
@@ -231,7 +235,8 @@ func buildLevel2() level {
 		{x: px(33), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 144, speed: 0.8},
 		{x: px(54), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 200, speed: 0.8},
 	}
-	return level{name: "level2", g: g, plats: plats, spawnX: px(2), spawnY: px(groundTop - 4)}
+	return level{name: "level2", g: g, plats: plats, spawnX: px(2), spawnY: px(groundTop - 4),
+		gateX: px(75), gateY: px(groundTop - 3), gateRequired: 4}
 }
 
 // =====================================================================
@@ -320,6 +325,7 @@ func buildLevel3() level {
 	return level{
 		name: "level3", g: g, plats: plats,
 		spawnX: px(2), spawnY: px(groundTop - 4),
+		gateX: px(76), gateY: px(groundTop - 3), gateRequired: 5,
 	}
 }
 
@@ -635,6 +641,13 @@ func (l level) toTiledJSON() tmap {
 				{Name: "range", Type: "float", Value: p.rng},
 				{Name: "speed", Type: "float", Value: p.speed},
 			},
+		})
+	}
+	if l.gateRequired > 0 {
+		objs = append(objs, tobj{
+			ID: len(objs) + 1, Name: "gate",
+			X: l.gateX, Y: l.gateY, Width: 2 * tileSize, Height: 3 * tileSize,
+			Properties: []tprop{{Name: "required", Type: "int", Value: float64(l.gateRequired)}},
 		})
 	}
 	return tmap{

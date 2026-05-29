@@ -10,7 +10,7 @@
  "version": "1.10",
  "tiledversion": "1.11.2",
  "nextlayerid": 4,
- "nextobjectid": 5,
+ "nextobjectid": 6,
  "tilesets": [
   {
    "firstgid": 1,
@@ -3733,6 +3733,21 @@
        "name": "speed",
        "type": "float",
        "value": 0.8
+      }
+     ]
+    },
+    {
+     "id": 5,
+     "name": "gate",
+     "x": 1200,
+     "y": 560,
+     "width": 32,
+     "height": 48,
+     "properties": [
+      {
+       "name": "required",
+       "type": "int",
+       "value": 4
       }
      ]
     }

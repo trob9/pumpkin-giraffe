@@ -163,8 +163,8 @@ func LoadLevelFS(fsys fs.FS, path string) (game.Level, error) {
 		}
 	}
 
-	// 4) Scan object layers for the spawn point and any moving platforms.
-	platforms, spawnX, spawnY, err := loadObjects(fsys, path)
+	// 4) Scan object layers for the spawn point, moving platforms, and gate.
+	platforms, gate, spawnX, spawnY, err := loadObjects(fsys, path)
 	if err != nil {
 		return game.Level{}, err
 	}
@@ -176,6 +176,7 @@ func LoadLevelFS(fsys fs.FS, path string) (game.Level, error) {
 		Enemies:   enemies,
 		Platforms: platforms,
 		Boulders:  boulders,
+		Gate:      gate,
 		SpawnX:    spawnX,
 		SpawnY:    spawnY,
 	}, nil
@@ -184,14 +185,14 @@ func LoadLevelFS(fsys fs.FS, path string) (game.Level, error) {
 // loadObjects re-reads the map and walks any object layers. An object named
 // "spawn" sets the player start; every other object becomes a moving platform
 // built from its axis/range/speed properties (with sensible defaults).
-func loadObjects(fsys fs.FS, pathToJSON string) (platforms []*game.MovingPlatform, spawnX, spawnY float64, err error) {
+func loadObjects(fsys fs.FS, pathToJSON string) (platforms []*game.MovingPlatform, gate *game.Gate, spawnX, spawnY float64, err error) {
 	data, err := fs.ReadFile(fsys, pathToJSON)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, nil, 0, 0, err
 	}
 	var tm struct{ Layers []tiledLayer }
 	if err := json.Unmarshal(data, &tm); err != nil {
-		return nil, 0, 0, err
+		return nil, nil, 0, 0, err
 	}
 
 	for _, lyr := range tm.Layers {
@@ -201,6 +202,25 @@ func loadObjects(fsys fs.FS, pathToJSON string) (platforms []*game.MovingPlatfor
 		for _, obj := range lyr.Objects {
 			if obj.Name == "spawn" {
 				spawnX, spawnY = obj.X, obj.Y
+				continue
+			}
+			if obj.Name == "gate" {
+				required := 5
+				for _, p := range obj.Properties {
+					if p.Name == "required" {
+						if f, ok := p.Value.(float64); ok {
+							required = int(f)
+						}
+					}
+				}
+				w, h := obj.Width, obj.Height
+				if w <= 0 {
+					w = 2 * float64(game.TileSize)
+				}
+				if h <= 0 {
+					h = 3 * float64(game.TileSize)
+				}
+				gate = game.NewGate(obj.X, obj.Y, w, h, required)
 				continue
 			}
 
@@ -237,7 +257,7 @@ func loadObjects(fsys fs.FS, pathToJSON string) (platforms []*game.MovingPlatfor
 				game.NewMovingPlatform(obj.X, obj.Y, w, h, rng, speed, axis))
 		}
 	}
-	return platforms, spawnX, spawnY, nil
+	return platforms, gate, spawnX, spawnY, nil
 }
 
 // LoadBackgroundFromFS reads the same JSON, but looks for the first imagelayer.

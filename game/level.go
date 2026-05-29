@@ -26,6 +26,7 @@ type Level struct {
 	Enemies   []*Enemy          // active enemies for this level
 	Platforms []*MovingPlatform // moving platforms read from the map's object layer
 	Boulders  []*Boulder        // pushable boulders placed via BoulderSpawnID tiles
+	Gate      *Gate             // end-of-level portal (nil = legacy auto-advance)
 	SpawnX    float64           // player start X in world pixels (0 = use default)
 	SpawnY    float64           // player start Y in world pixels (0 = use default)
 }
