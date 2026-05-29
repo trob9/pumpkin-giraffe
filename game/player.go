@@ -28,6 +28,11 @@ const (
 	// doubleJumpWindow is the number of frames after a jump during which a second jump is allowed.
 	doubleJumpWindow = 24
 
+	// MaxHealth is how many hearts the giraffe starts each life with.
+	MaxHealth = 3
+	// invulnFrames is the immunity window (in frames, 60/s) after taking a hit.
+	invulnFrames = 75
+
 	// normalJumpVel is the upward speed applied when the player jumps.
 	normalJumpVel = -6.5
 	// doubleJumpVel is a stronger lift for the second jump (50% more than normal).
@@ -67,6 +72,12 @@ type Player struct {
 
 	// Pumpkins — how many pumpkins the player has collected
 	Pumpkins int
+
+	// Health — remaining hearts (MaxHealth down to 0). At 0 the player dies.
+	Health int
+	// invuln — frames of damage immunity remaining after taking a hit; the sprite
+	// also blinks while this is active.
+	invuln int
 
 	// Animation image slices for moving right and left:
 	walkR, walkL []*ebiten.Image
@@ -146,6 +157,9 @@ func NewPlayer(assets embed.FS, onInteract func(string)) *Player {
 		stepTimer:       stepInterval,
 		framesSinceJump: doubleJumpWindow + 1,
 
+		// start with a full set of hearts
+		Health: MaxHealth,
+
 		// assign loaded animations and poses
 		walkR:     walkR,
 		walkL:     walkL,
@@ -189,6 +203,34 @@ func (p *Player) Respawn() {
 	p.framesSinceJump = doubleJumpWindow + 1
 }
 
+// Hurt applies one hit of damage if the player isn't currently invulnerable:
+// it removes a heart, starts the invulnerability window, and knocks the player
+// up and away from the hit (knockDir is +1 to push right, -1 to push left).
+// Returns true if this hit emptied the last heart.
+func (p *Player) Hurt(knockDir float64) bool {
+	if p.invuln > 0 {
+		return false
+	}
+	p.Health--
+	p.invuln = invulnFrames
+	p.VelY = -3.5
+	p.VelX = knockDir * 2.5
+	p.OnGround = false
+	p.ridingPlatform = nil
+	return p.Health <= 0
+}
+
+// LoseHeart removes a heart unconditionally (e.g. falling off the world), with
+// no invulnerability dodge. Returns true if it was the last heart.
+func (p *Player) LoseHeart() bool {
+	p.Health--
+	p.invuln = invulnFrames
+	return p.Health <= 0
+}
+
+// Invulnerable reports whether the player is in the post-hit immunity window.
+func (p *Player) Invulnerable() bool { return p.invuln > 0 }
+
 // currentFloorID returns the tile index directly beneath the player's feet.
 // This helps determine what type of ground the player is standing on.
 func (p *Player) currentFloorID() int {
@@ -226,6 +268,11 @@ func (p *Player) Update(
 	// Track frames since last jump to enforce double-jump window
 	p.framesSinceJump++
 
+	// Count down post-hit invulnerability.
+	if p.invuln > 0 {
+		p.invuln--
+	}
+
 	// Neck-extend ability (hold Q). Grows/retracts the neck and evaluates the
 	// hook. While the head is hooked over a ledge (hanging) or hoisting up onto
 	// it, the neck drives the player's Y itself and returns true, so we skip the
@@ -248,11 +295,15 @@ func (p *Player) Update(
 		p.facingRight = false
 	}
 
-	// If the player falls below the bottom of the screen, trigger respawn
+	// If the player falls below the bottom of the screen, it costs a heart.
+	// If hearts remain, respawn at the level's start; otherwise leave Health at
+	// 0 so the main loop detects the death and restarts the level.
 	if p.Y > float64(ScreenHeight) {
 		deathSnd.Rewind()
 		deathSnd.Play()
-		p.Respawn()
+		if !p.LoseHeart() {
+			p.Respawn()
+		}
 		return // skip remaining physics and animation this frame
 	}
 

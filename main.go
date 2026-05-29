@@ -29,9 +29,30 @@ import (
 //go:embed assets/sfx/*.wav
 //go:embed assets/music/*.wav
 //go:embed assets/fonts/*.ttf
+//go:embed assets/ui/*.png
 //go:embed levels/*.json
 //go:embed levels/*.png
 var Assets embed.FS
+
+// HUD / UI images loaded from the embedded assets at startup.
+var (
+	heartFull  *ebiten.Image
+	heartEmpty *ebiten.Image
+)
+
+// loadImage decodes a PNG from the embedded filesystem into an Ebiten image.
+func loadImage(path string) *ebiten.Image {
+	f, err := Assets.Open(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	img, _, err := ebitenutil.NewImageFromReader(f)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return img
+}
 
 // THE COMMENTS ABOVE VAR ASSETS ARE BEING UTILISED AS CODE FOR THE EMBED LIBRARY, DO NOT DELETE THEM
 const (
@@ -405,9 +426,23 @@ func (g *Game) Update() error {
 				g.monsterDeathSnd.Play()
 				g.player.VelY = -4 // bounce the player upward
 			} else {
-				// hit from the side: respawn the player
-				g.player.Respawn()
+				// hit from the side: lose a heart and get knocked away from the
+				// enemy (no-op while still invulnerable from a recent hit).
+				knock := 1.0
+				if g.player.X < en.X {
+					knock = -1.0
+				}
+				if g.player.Hurt(knock) {
+					g.deathSnd.Rewind()
+					g.deathSnd.Play()
+				}
 			}
+		}
+
+		// 4d2) Out of hearts → die and restart the current level.
+		if g.player.Health <= 0 {
+			g.killAndRestartLevel()
+			return nil
 		}
 	}
 
@@ -578,7 +613,17 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.player.Height, // sprite height (for offset)
 	)
 
-	// 8) Draw HUD: pumpkin count in top-right
+	// 8) Draw HUD: hearts in the top-left, pumpkin count in the top-right
+	for i := 0; i < game.MaxHealth; i++ {
+		img := heartEmpty
+		if i < g.player.Health {
+			img = heartFull
+		}
+		hop := &ebiten.DrawImageOptions{}
+		hop.GeoM.Scale(2, 2)
+		hop.GeoM.Translate(float64(16+i*34), 14)
+		screen.DrawImage(img, hop)
+	}
 	text.Draw(screen, fmt.Sprintf("Pumpkins: %d", g.player.Pumpkins),
 		hudFont, WindowWidth-200, 24, color.White,
 	)
@@ -685,6 +730,19 @@ func (g *Game) advanceLevel() {
 	g.initialPumpkinDropped = false
 }
 
+// killAndRestartLevel handles death: reload the current level fresh and respawn
+// the giraffe with a full set of hearts. The run timer keeps going, so dying
+// costs you time but not the whole run.
+func (g *Game) killAndRestartLevel() {
+	game.Levels = loadAllLevels()
+	applySpawn(game.CurrentLevel)
+	g.player = game.NewPlayer(Assets, g.ui.NewMessage)
+	g.pumpkins = nil
+	g.pumpkinSpawned = false
+	g.pumpkinMissed = false
+	g.initialPumpkinDropped = false
+}
+
 // main is the entry point for Pumpkin Giraffe. It sets up graphics, audio, game data,
 // and then starts the Ebiten game loop.
 func main() {
@@ -695,6 +753,9 @@ func main() {
 	}
 	// Load any extra images used for interactive objects (e.g., barrels, pumpkins).
 	game.LoadInteractableAssets(Assets)
+	// Load HUD images.
+	heartFull = loadImage("assets/ui/heart_full.png")
+	heartEmpty = loadImage("assets/ui/heart_empty.png")
 	// Read every level layout from JSON so we know where walls, floors, enemies,
 	// moving platforms, and spawn points go. Levels play in this order.
 	game.Levels = loadAllLevels()

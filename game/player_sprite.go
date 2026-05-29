@@ -16,6 +16,12 @@ import (
 // It chooses between interaction, jump, walk, or idle sprites based on state,
 // applies the camera offset, and advances the idle-cycle animation.
 func (p *Player) Draw(screen *ebiten.Image, camX, camY float64) {
+	// Blink while invulnerable after taking a hit: skip drawing on alternating
+	// short intervals so the giraffe flickers.
+	if p.invuln > 0 && (p.invuln/4)%2 == 1 {
+		return
+	}
+
 	// Prepare drawing options and position at (X, Y) minus the camera’s offset
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(p.X-camX, p.Y-camY)
