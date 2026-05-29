@@ -176,6 +176,12 @@ func (n *Neck) evaluateHook(p *Player) {
 	const catchBelow = 8.0  // chin still this far below the lip → catches early
 	const catchAbove = 30.0 // chin up to this far above the lip → still catches
 	catches := func(surfaceTop float64) bool {
+		// Only ledges ABOVE the body can be hooked — never the floor the giraffe
+		// is standing on (which sits below the body, at the feet). Without this
+		// the chin would "catch" the ground underneath and refuse to rise.
+		if surfaceTop > p.Y {
+			return false
+		}
 		d := chin - surfaceTop
 		return d <= catchBelow && d >= -catchAbove
 	}
