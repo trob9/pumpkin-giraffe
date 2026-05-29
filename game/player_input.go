@@ -77,4 +77,3 @@ func (p *Player) IsBesideInteractableObject() bool {
 	tileID := Levels[CurrentLevel].Tiles[ty][tx]
 	return isInteractableObject(tileID)
 }
-

@@ -48,10 +48,10 @@ func (w who) speakerName() string {
 // npc is one placed character on one level: a sprite, where it stands, and a
 // per-instance bob phase so several NPCs on screen don't bob in lockstep.
 type npc struct {
-	id    who           // which character this is (drives sprite + script)
-	x, y  float64       // world position of the sprite's top-left, in pixels
+	id     who           // which character this is (drives sprite + script)
+	x, y   float64       // world position of the sprite's top-left, in pixels
 	sprite *ebiten.Image // the 16x16 frame to draw
-	phase float64       // bob phase offset so each NPC bobs independently
+	phase  float64       // bob phase offset so each NPC bobs independently
 }
 
 // npcBox is the 16x16 footprint of an NPC in world space, used for the
@@ -106,7 +106,7 @@ func (n *npc) drawWorld(screen *ebiten.Image, camX, camY, t float64, highlight b
 	// along) plus its own faster wobble so it draws the eye. We draw it as a
 	// tiny hand-built glyph rather than text, because the world buffer is only
 	// 640x360 and the game's font is far too large at this scale.
-	mx := sx + 7              // roughly centred over the 16px-wide sprite
+	mx := sx + 7 // roughly centred over the 16px-wide sprite
 	my := sy - 6 + math.Sin(t*4)*0.6
 
 	markCol := color.RGBA{0xFF, 0xE8, 0x6A, 0xff} // warm yellow

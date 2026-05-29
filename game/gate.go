@@ -75,7 +75,7 @@ func (g *Gate) Draw(screen *ebiten.Image, camX, camY float64, affordable bool) {
 		op.ColorScale.ScaleWithColor(frame)
 		screen.DrawImage(pix, op)
 	}
-	drawBar(x0, y0, 3, g.H)          // left pillar
-	drawBar(x0+g.W-3, y0, 3, g.H)    // right pillar
-	drawBar(x0, y0, g.W, 3)          // lintel
+	drawBar(x0, y0, 3, g.H)       // left pillar
+	drawBar(x0+g.W-3, y0, 3, g.H) // right pillar
+	drawBar(x0, y0, g.W, 3)       // lintel
 }

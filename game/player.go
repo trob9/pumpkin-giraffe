@@ -1,5 +1,5 @@
-//Core player logic: world-space position, physics (gravity, collision with walls/floor),
-//movement, respawning, pumpkin pickup, animation state, and sound-effect playback for footsteps, jumps, landings, etc.
+// Core player logic: world-space position, physics (gravity, collision with walls/floor),
+// movement, respawning, pumpkin pickup, animation state, and sound-effect playback for footsteps, jumps, landings, etc.
 package game
 
 import (

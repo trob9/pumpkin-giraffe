@@ -23,12 +23,12 @@ const charDelay = 22 * time.Millisecond
 
 // dialogue holds the state of one open conversation.
 type dialogue struct {
-	speaker who      // who is talking (drives the name label)
-	lines   []string // the full set of lines for this conversation
-	line    int      // index of the line currently being shown
-	shown   int      // how many runes of the current line are revealed
+	speaker who       // who is talking (drives the name label)
+	lines   []string  // the full set of lines for this conversation
+	line    int       // index of the line currently being shown
+	shown   int       // how many runes of the current line are revealed
 	started time.Time // when the current line began revealing
-	open    bool     // whether the box is currently visible
+	open    bool      // whether the box is currently visible
 }
 
 // start opens the box on the first line of a fresh conversation.
@@ -133,11 +133,11 @@ func (d *dialogue) draw(screen *ebiten.Image, w, h int, face, nameFace font.Face
 	// 2) A thin warm border, drawn as four edge strips. The warm tone ties the
 	//    box to the pumpkin theme without being garish.
 	border := color.RGBA{0xC9, 0x8A, 0x3C, 0xff}
-	const t = 2 // border thickness
-	fillRect(screen, bx, by, bw, t, border)          // top
-	fillRect(screen, bx, by+bh-t, bw, t, border)      // bottom
-	fillRect(screen, bx, by, t, bh, border)           // left
-	fillRect(screen, bx+bw-t, by, t, bh, border)       // right
+	const t = 2                                  // border thickness
+	fillRect(screen, bx, by, bw, t, border)      // top
+	fillRect(screen, bx, by+bh-t, bw, t, border) // bottom
+	fillRect(screen, bx, by, t, bh, border)      // left
+	fillRect(screen, bx+bw-t, by, t, bh, border) // right
 
 	// 3) Speaker name, in the warm border colour, near the top-left.
 	name := d.speaker.speakerName()

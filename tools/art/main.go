@@ -47,7 +47,7 @@ var (
 // ---------------------------------------------------------------------------
 
 type canvas struct {
-	img *image.RGBA
+	img  *image.RGBA
 	w, h int
 }
 
@@ -424,8 +424,8 @@ func drawSkull2Frame(set func(x, y int, col color.RGBA), bob int, jaw int, flick
 	// jaw rows 9..12, animated open/closed by jaw offset
 	jy := 9 + 0
 	jawRows := map[int][2]int{
-		jy:     {5, 10},
-		jy + 1: {5, 10},
+		jy:           {5, 10},
+		jy + 1:       {5, 10},
 		jy + 2 + jaw: {6, 9},
 	}
 	for y, span := range jawRows {
@@ -851,7 +851,7 @@ func softDisc(c *canvas, cx, cy, r float64, core color.RGBA, glowReach float64) 
 func paintMeadowDay() {
 	c := newCanvas(bgW, bgH)
 	fillGradientDithered(c, []stop{
-		{0.0, color.RGBA{96, 156, 206, 255}},  // upper sky blue
+		{0.0, color.RGBA{96, 156, 206, 255}},   // upper sky blue
 		{0.45, color.RGBA{152, 196, 226, 255}}, // mid
 		{0.7, color.RGBA{206, 226, 232, 255}},  // pale near horizon
 		{1.0, color.RGBA{224, 232, 224, 255}},  // hazy meadow light
@@ -924,12 +924,12 @@ func drawCloud(c *canvas, cx, cy, w, h int, alpha float64) {
 func paintDusk() {
 	c := newCanvas(bgW, bgH)
 	fillGradientDithered(c, []stop{
-		{0.0, color.RGBA{38, 30, 64, 255}},   // deep purple top
-		{0.3, color.RGBA{86, 56, 96, 255}},   // purple
-		{0.55, color.RGBA{176, 86, 96, 255}}, // rose
-		{0.72, color.RGBA{230, 132, 84, 255}}, // orange band
+		{0.0, color.RGBA{38, 30, 64, 255}},     // deep purple top
+		{0.3, color.RGBA{86, 56, 96, 255}},     // purple
+		{0.55, color.RGBA{176, 86, 96, 255}},   // rose
+		{0.72, color.RGBA{230, 132, 84, 255}},  // orange band
 		{0.85, color.RGBA{246, 178, 102, 255}}, // warm horizon
-		{1.0, color.RGBA{120, 74, 78, 255}},  // dim foreground
+		{1.0, color.RGBA{120, 74, 78, 255}},    // dim foreground
 	})
 	// early stars only in the upper purple region
 	addStars(c, 90, 7, 200, 0.4)
@@ -945,19 +945,19 @@ func paintDusk() {
 		}
 	}
 	// silhouette treelines, darkening toward the foreground
-	silhouetteBand(c, color.RGBA{86, 56, 74, 255}, 500, 30, 101, false)  // far ridge
-	silhouetteBand(c, color.RGBA{44, 30, 46, 255}, 560, 40, 202, true)   // mid treeline
-	silhouetteBand(c, color.RGBA{20, 14, 24, 255}, 650, 46, 303, true)   // near trees, near-black
+	silhouetteBand(c, color.RGBA{86, 56, 74, 255}, 500, 30, 101, false) // far ridge
+	silhouetteBand(c, color.RGBA{44, 30, 46, 255}, 560, 40, 202, true)  // mid treeline
+	silhouetteBand(c, color.RGBA{20, 14, 24, 255}, 650, 46, 303, true)  // near trees, near-black
 	c.save("assets/backgrounds/bg_dusk.png")
 }
 
 func paintCave() {
 	c := newCanvas(bgW, bgH)
 	fillGradientDithered(c, []stop{
-		{0.0, color.RGBA{6, 6, 12, 255}},      // near-black top
-		{0.4, color.RGBA{14, 16, 34, 255}},    // deep blue
-		{0.7, color.RGBA{26, 22, 52, 255}},    // violet
-		{1.0, color.RGBA{34, 26, 58, 255}},    // slightly lit floor area
+		{0.0, color.RGBA{6, 6, 12, 255}},   // near-black top
+		{0.4, color.RGBA{14, 16, 34, 255}}, // deep blue
+		{0.7, color.RGBA{26, 22, 52, 255}}, // violet
+		{1.0, color.RGBA{34, 26, 58, 255}}, // slightly lit floor area
 	})
 	// distant warm torch glow, lower-right — irregular firelight, not a sun:
 	// a broad soft halo plus a small flickery core offset upward.

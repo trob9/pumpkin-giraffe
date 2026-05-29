@@ -1,4 +1,4 @@
-//Manages the tilemap: slicing the master tileset PNG into individual tiles, 
+//Manages the tilemap: slicing the master tileset PNG into individual tiles,
 //storing them, and drawing the 2D grid (plus optional background) each frame; also holds the global Levels slice.
 package game
 

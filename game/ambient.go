@@ -28,12 +28,12 @@ type mote struct {
 // as a normalised colour (0..1) plus an opacity, and drawn with PREMULTIPLIED
 // alpha so a light tint stays subtle instead of additively blowing out the scene.
 type Ambient struct {
-	kind                   AmbientKind
-	w, h                   float64
-	motes                  []mote
-	tintR, tintG, tintB    float32 // 0..1 tint colour
-	tintA                  float32 // 0..1 opacity
-	t                      float64
+	kind                AmbientKind
+	w, h                float64
+	motes               []mote
+	tintR, tintG, tintB float32 // 0..1 tint colour
+	tintA               float32 // 0..1 opacity
+	t                   float64
 }
 
 // NewAmbient builds the atmosphere for a viewport of w x h pixels.
