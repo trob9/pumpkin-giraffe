@@ -44,7 +44,7 @@ You'll need [Go](https://go.dev/dl/) 1.24 or newer. The first build downloads Eb
 
 ## A note on the giraffe
 
-He has a short neck. Yes, on purpose. A giraffe who can't reach the high leaves has to be good at *something*, so he runs. Fast.
+He has a short neck. Yes, on purpose. A giraffe who can't reach the high leaves has to be good at *something* — so he jumps. Sometimes really high, if you know what you're doing 😉
 
 ## Tech
 
