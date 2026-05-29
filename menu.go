@@ -204,12 +204,36 @@ func centerText(screen *ebiten.Image, s string, face font.Face, y int, c color.C
 
 var (
 	colGold = color.RGBA{232, 198, 92, 255}
-	colDim  = color.RGBA{150, 150, 165, 255}
+	colDim  = color.RGBA{170, 170, 185, 255}
 	colHi   = color.RGBA{255, 255, 255, 255}
 )
 
+// menuPixel is a shared 1x1 white image for the darkening overlay.
+var menuPixel *ebiten.Image
+
+// drawMenuBackdrop paints the dusk art behind a menu screen with a dark overlay
+// so text stays legible. Falls back to a flat colour if the art didn't load.
+func drawMenuBackdrop(screen *ebiten.Image) {
+	if menuBg == nil {
+		screen.Fill(color.RGBA{18, 16, 30, 255})
+		return
+	}
+	bb := menuBg.Bounds()
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(float64(WindowWidth)/float64(bb.Dx()), float64(WindowHeight)/float64(bb.Dy()))
+	screen.DrawImage(menuBg, op)
+	if menuPixel == nil {
+		menuPixel = ebiten.NewImage(1, 1)
+		menuPixel.Fill(color.White)
+	}
+	ov := &ebiten.DrawImageOptions{}
+	ov.GeoM.Scale(WindowWidth, WindowHeight)
+	ov.ColorScale.Scale(0, 0, 0, 0.55) // premultiplied dark wash
+	screen.DrawImage(menuPixel, ov)
+}
+
 func (g *Game) drawMenu(screen *ebiten.Image) {
-	screen.Fill(color.RGBA{18, 16, 30, 255})
+	drawMenuBackdrop(screen)
 	centerText(screen, "PUMPKIN GIRAFFE", buttonFont, 150, colGold)
 	centerText(screen, "a short-necked odyssey", hudFont, 195, colDim)
 	for i, item := range mainMenuItems {
@@ -225,7 +249,7 @@ func (g *Game) drawMenu(screen *ebiten.Image) {
 }
 
 func (g *Game) drawSettings(screen *ebiten.Image) {
-	screen.Fill(color.RGBA{18, 16, 30, 255})
+	drawMenuBackdrop(screen)
 	centerText(screen, "CONTROLS", buttonFont, 120, colGold)
 	for i, a := range game.ActionOrder {
 		y := 220 + i*48
@@ -245,7 +269,7 @@ func (g *Game) drawSettings(screen *ebiten.Image) {
 }
 
 func (g *Game) drawLore(screen *ebiten.Image) {
-	screen.Fill(color.RGBA{14, 12, 24, 255})
+	drawMenuBackdrop(screen)
 	page := lorePages[g.lorePage]
 	for i, line := range page {
 		c := color.Color(colHi)
@@ -261,7 +285,7 @@ func (g *Game) drawLore(screen *ebiten.Image) {
 }
 
 func (g *Game) drawHowTo(screen *ebiten.Image) {
-	screen.Fill(color.RGBA{18, 16, 30, 255})
+	drawMenuBackdrop(screen)
 	centerText(screen, "HOW TO PLAY", buttonFont, 110, colGold)
 	lines := []string{
 		"Collect pumpkins, then reach the glowing gate and",

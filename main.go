@@ -40,6 +40,7 @@ var Assets embed.FS
 var (
 	heartFull  *ebiten.Image
 	heartEmpty *ebiten.Image
+	menuBg     *ebiten.Image // atmospheric backdrop for the menu screens
 )
 
 // loadImage decodes a PNG from the embedded filesystem into an Ebiten image.
@@ -700,9 +701,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		hop.GeoM.Translate(float64(16+i*34), 14)
 		screen.DrawImage(img, hop)
 	}
-	text.Draw(screen, fmt.Sprintf("Pumpkins: %d", g.player.Pumpkins),
-		hudFont, WindowWidth-200, 24, color.White,
-	)
+	// Pumpkin count, top-right. When the field has a gate, show the toll so the
+	// player knows how many they need to pass.
+	pk := fmt.Sprintf("Pumpkins: %d", g.player.Pumpkins)
+	if gate := game.Levels[game.CurrentLevel].Gate; gate != nil {
+		pk = fmt.Sprintf("Pumpkins: %d / %d", g.player.Pumpkins, gate.Required)
+	}
+	pb := text.BoundString(hudFont, pk)
+	text.Draw(screen, pk, hudFont, WindowWidth-30-(pb.Max.X-pb.Min.X), 24, color.White)
 
 	// 9) Compute and draw the timer in the top-center
 	var d time.Duration
@@ -854,6 +860,7 @@ func main() {
 	// Load HUD images.
 	heartFull = loadImage("assets/ui/heart_full.png")
 	heartEmpty = loadImage("assets/ui/heart_empty.png")
+	menuBg = loadImage("assets/backgrounds/bg_dusk.png")
 	// Load any saved key rebindings (falls back to defaults).
 	loadKeybinds()
 	// Read every level layout from JSON so we know where walls, floors, enemies,
