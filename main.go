@@ -184,6 +184,7 @@ type Game struct {
 	rebindAction          int                   // action being rebound (-1 = not listening)
 	lorePage              int                   // current page on the lore screen
 	story                 *game.StoryManager    // NPCs + dialogue
+	effects               []*game.Effect        // transient poof bursts on enemy death
 }
 
 // ambientKindFor maps a level index to its time-of-day atmosphere.
@@ -435,6 +436,14 @@ func (g *Game) Update() error {
 	if g.ambient != nil {
 		g.ambient.Update()
 	}
+	// Advance transient effects, dropping finished ones.
+	for i := 0; i < len(g.effects); i++ {
+		g.effects[i].Update()
+		if g.effects[i].Done() {
+			g.effects = append(g.effects[:i], g.effects[i+1:]...)
+			i--
+		}
+	}
 
 	// 4b) Update the player: movement, gravity, collisions, and animation
 	g.player.Update(
@@ -485,6 +494,7 @@ func (g *Game) Update() error {
 			en.Alive = false
 			g.monsterDeathSnd.Rewind()
 			g.monsterDeathSnd.Play()
+			g.effects = append(g.effects, game.NewPoof(en.X+game.EnemyW/2, en.Y+game.EnemyH/2))
 			continue
 		}
 
@@ -496,6 +506,7 @@ func (g *Game) Update() error {
 				en.Alive = false
 				g.monsterDeathSnd.Rewind()
 				g.monsterDeathSnd.Play()
+				g.effects = append(g.effects, game.NewPoof(en.X+game.EnemyW/2, en.Y+game.EnemyH/2))
 				g.player.VelY = -4 // bounce the player upward
 			} else {
 				// hit from the side: lose a heart and get knocked away from the
@@ -672,6 +683,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// 4.5) Draw NPCs in the world (markers, bob, "press E" prompt).
 	if g.story != nil {
 		g.story.DrawWorld(g.buffer, game.CurrentLevel, g.CameraX, g.CameraY)
+	}
+
+	// 4.6) Draw transient effects (enemy-defeat poofs).
+	for _, e := range g.effects {
+		e.Draw(g.buffer, g.CameraX, g.CameraY)
 	}
 
 	// 5) Draw all alive pumpkins
