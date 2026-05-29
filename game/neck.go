@@ -119,8 +119,9 @@ func (n *Neck) Update(qHeld bool, p *Player) bool {
 		}
 		if n.hooked {
 			// Anchor: the head's chin rests on the ledge lip and the body hangs
-			// below by the neck's length. Kill the fall so we don't slip off —
-			// you hang here until you release Q to climb up.
+			// below by the neck's length. Kill all momentum so we don't slip off
+			// or slide past — you hang here until you release Q to climb up.
+			p.VelX = 0
 			p.VelY = 0
 			p.OnGround = false
 			p.Y = n.hookY - neckHeadRows + n.length
@@ -164,8 +165,6 @@ func (n *Neck) headWorldTop(p *Player) float64 {
 func (n *Neck) evaluateHook(p *Player) {
 	headTop := n.headWorldTop(p)
 	chin := headTop + neckHeadRows // bottom of the head — the part that catches
-	headLeft := p.X
-	headRight := p.X + p.Width
 	headCX := p.X + p.Width/2
 	ts := float64(TileSize)
 
@@ -186,20 +185,21 @@ func (n *Neck) evaluateHook(p *Player) {
 		return d <= catchBelow && d >= -catchAbove
 	}
 
-	// 1) Tile ledges: a solid tile with empty space directly above it, somewhere
-	//    under the head's horizontal span.
+	// 1) Tile ledges: require the head's CENTRE to be over a standable tile (solid
+	//    with empty space above), not merely beside its edge — otherwise the head
+	//    magnetises onto a ledge the instant you pass near its side. You have to
+	//    bring your head over the top surface for the chin to catch.
+	tcx := int(headCX / ts)
 	tyLo := int((chin-catchAbove)/ts) - 1
 	tyHi := int((chin+catchBelow)/ts) + 1
-	for tx := int(headLeft / ts); tx <= int(headRight/ts); tx++ {
-		for ty := tyLo; ty <= tyHi; ty++ {
-			if !isWall(tx, ty) || isWall(tx, ty-1) {
-				continue // not a hookable ledge surface
-			}
-			if surfaceTop := float64(ty) * ts; catches(surfaceTop) {
-				n.hooked = true
-				n.hookY = surfaceTop
-				return
-			}
+	for ty := tyLo; ty <= tyHi; ty++ {
+		if !isWall(tcx, ty) || isWall(tcx, ty-1) {
+			continue // not a hookable ledge surface
+		}
+		if surfaceTop := float64(ty) * ts; catches(surfaceTop) {
+			n.hooked = true
+			n.hookY = surfaceTop
+			return
 		}
 	}
 
@@ -262,31 +262,46 @@ func (n *Neck) runHoist(p *Player) {
 // so there is no original head left at the shoulders to mask — the old
 // full-width mask (which showed as two boxes either side of the neck) is gone.
 //
-//	bodyImg — the current sprite frame (idle/walk/jump). We slice the head
-//	          (top neckHeadRows) and body (the rest) from it using the frame's
-//	          OWN bounds origin, so walk frames (which live at x-offsets inside
-//	          their sheet) slice correctly instead of coming out empty.
+//	bodyImg — the current sprite frame (idle/walk/jump). We slice it using the
+//	          frame's OWN bounds origin, so walk frames (which live at x-offsets
+//	          inside their sheet) slice correctly instead of coming out empty.
 //	px, py  — the body's screen-space top-left (already camera-adjusted).
+//
+// Only the HEAD (centre columns of the top rows) is lifted onto the neck; the
+// side columns of those rows stay with the body. That matters for the jump pose,
+// where the arms are raised up beside the head sharing the same rows — a plain
+// row split would drag the arm-tops up next to the lifted head. By keeping the
+// side columns down, the arms stay attached to the body and reach up as normal.
 func (n *Neck) Draw(screen *ebiten.Image, bodyImg *ebiten.Image, px, py float64) {
 	if n.length <= 0.01 {
 		return
 	}
 	b := bodyImg.Bounds()
-	const headH = neckHeadRows // rows 0..6 = head; 7..15 = neck-base + body + legs
+	mnx, mny := b.Min.X, b.Min.Y
 
-	// 1) Lower body (everything below the head) at its normal position.
-	bodyRect := image.Rect(b.Min.X, b.Min.Y+headH, b.Min.X+16, b.Min.Y+16)
-	body := bodyImg.SubImage(bodyRect).(*ebiten.Image)
-	opBody := &ebiten.DrawImageOptions{}
-	opBody.GeoM.Translate(px, py+float64(headH))
-	screen.DrawImage(body, opBody)
+	// Head region: centre columns [headColL,headColR), top headRows rows. Chosen
+	// to cover the ears+face in every pose while excluding the arm columns.
+	const headRows = neckHeadRows
+	const headColL = 3
+	const headColR = 13
 
-	// 2) Thin neck column filling the gap between the lifted head and the body's
-	//    neck-base. Matches the sprite's neck: tan core (cols 6-9) inside a black
-	//    outline (cols 5-10).
+	part := func(sx0, sy0, sx1, sy1 int, dx, dy float64) {
+		sub := bodyImg.SubImage(image.Rect(mnx+sx0, mny+sy0, mnx+sx1, mny+sy1)).(*ebiten.Image)
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(dx, dy)
+		screen.DrawImage(sub, op)
+	}
+
+	// 1) Body = the whole frame MINUS the head rect, drawn in place: the two side
+	//    columns full-height (these carry the arms), plus the centre below the head.
+	part(0, 0, headColL, 16, px, py)                                       // left strip
+	part(headColR, 0, 16, 16, px+float64(headColR), py)                    // right strip
+	part(headColL, headRows, headColR, 16, px+float64(headColL), py+float64(headRows)) // centre-below
+
+	// 2) Thin neck column between the lifted head and the body's neck-base.
 	headTopY := py - n.length
-	neckTopY := headTopY + float64(headH) - 1 // tuck just under the head
-	neckBotY := py + float64(headH) + 1        // overlap into the body's neck rows
+	neckTopY := headTopY + float64(headRows) - 1
+	neckBotY := py + float64(headRows) + 1
 	if neckH := neckBotY - neckTopY; neckH > 0 {
 		pix := neckPixelImage()
 		opO := &ebiten.DrawImageOptions{}
@@ -302,10 +317,6 @@ func (n *Neck) Draw(screen *ebiten.Image, bodyImg *ebiten.Image, px, py float64)
 		screen.DrawImage(pix, opT)
 	}
 
-	// 3) Head (top headH rows of the current frame) lifted up by n.length.
-	headRect := image.Rect(b.Min.X, b.Min.Y, b.Min.X+16, b.Min.Y+headH)
-	head := bodyImg.SubImage(headRect).(*ebiten.Image)
-	opHead := &ebiten.DrawImageOptions{}
-	opHead.GeoM.Translate(px, headTopY)
-	screen.DrawImage(head, opHead)
+	// 3) The head (centre columns of the top rows) lifted up by n.length.
+	part(headColL, 0, headColR, headRows, px+float64(headColL), headTopY)
 }
