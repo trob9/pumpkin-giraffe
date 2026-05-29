@@ -8,7 +8,7 @@ import (
 	"io/fs"
 	"path"
 
-	"github.com/Trob999/PumpkinGiraffe/game"
+	"github.com/TRob9/pumpkin-giraffe/game"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"

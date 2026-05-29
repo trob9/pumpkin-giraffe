@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/Trob999/PumpkinGiraffe/game"
-	aud "github.com/Trob999/PumpkinGiraffe/game/audio"
-	"github.com/Trob999/PumpkinGiraffe/game/loader"
-	"github.com/Trob999/PumpkinGiraffe/game/ui"
+	"github.com/TRob9/pumpkin-giraffe/game"
+	aud "github.com/TRob9/pumpkin-giraffe/game/audio"
+	"github.com/TRob9/pumpkin-giraffe/game/loader"
+	"github.com/TRob9/pumpkin-giraffe/game/ui"
 
 	"embed"
 	"fmt"

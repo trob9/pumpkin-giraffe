@@ -13,14 +13,14 @@ import (
 func readHorizontalInput(moveSpeed float64) float64 {
 	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
 		if ebiten.IsKeyPressed(ebiten.KeyShiftLeft) {
-			return -moveSpeed * 1.5 // move left with mult
+			return -moveSpeed * 2.5 // move left with mult
 		} else {
 			return -moveSpeed // move left
 		}
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyRight) || ebiten.IsKeyPressed(ebiten.KeyD) {
 		if ebiten.IsKeyPressed(ebiten.KeyShiftLeft) {
-			return +moveSpeed * 1.5 // move right with mult
+			return +moveSpeed * 2.5 // move right with mult
 		} else {
 			return +moveSpeed // move right
 		}
