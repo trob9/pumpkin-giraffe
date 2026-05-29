@@ -744,6 +744,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	x := (WindowWidth - tb.Dx()) / 2
 	text.Draw(screen, timerStr, hudFont, x, 32, color.White)
 
+	// 9.5) Brief red flash when the giraffe takes a hit.
+	if a := g.player.DamageFlashAlpha(); a > 0 {
+		ebitenutil.DrawRect(screen, 0, 0, WindowWidth, WindowHeight,
+			color.RGBA{200, 30, 30, uint8(a * 255)})
+	}
+
 	// 10) Dialogue box overlay (full-screen UI), drawn last so it sits on top.
 	if g.story != nil {
 		g.story.DrawUI(screen)

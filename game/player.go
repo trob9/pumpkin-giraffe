@@ -266,6 +266,16 @@ func (p *Player) LoseHeart() bool {
 // Invulnerable reports whether the player is in the post-hit immunity window.
 func (p *Player) Invulnerable() bool { return p.invuln > 0 }
 
+// DamageFlashAlpha returns a brief red-flash strength (0..1) right after a hit,
+// fading out over the first few frames of invulnerability — for screen feedback.
+func (p *Player) DamageFlashAlpha() float32 {
+	const flash = 12
+	if p.invuln > invulnFrames-flash {
+		return float32(p.invuln-(invulnFrames-flash)) / flash * 0.35
+	}
+	return 0
+}
+
 // Attacking reports whether a sword slash is currently animating (for drawing).
 func (p *Player) Attacking() bool { return p.attackTimer > 0 }
 
