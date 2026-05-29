@@ -91,9 +91,9 @@ func newEnemy(x, y float64, kind EnemyKind, right, left []*ebiten.Image) *Enemy 
 	}
 	switch kind {
 	case KindChaser:
-		e.alertRange = 110
+		e.alertRange = 120
 		e.patrolSpeed = 0.55
-		e.chaseSpeed = 1.05
+		e.chaseSpeed = 1.45 // nearly walking pace — a real threat, but you can sprint clear
 	default:
 		e.alertRange = 52
 		e.patrolSpeed = PatrolSpeed
