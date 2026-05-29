@@ -588,17 +588,26 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			WindowWidth/2-80, WindowHeight/2-100, color.White)
 
 	case StateFinished:
-		// Finished screen: show final time
+		// Finished screen: a short epilogue, then the final time.
+		epilogue := []string{
+			"The last gate closes softly behind you.",
+			"The patch is quiet again — the good kind, now.",
+			"A short neck, it turns out, was enough.",
+		}
+		ey := WindowHeight/2 - 180
+		for _, line := range epilogue {
+			lb := text.BoundString(hudFont, line)
+			text.Draw(screen, line, hudFont, (WindowWidth-(lb.Max.X-lb.Min.X))/2, ey, color.RGBA{220, 210, 190, 255})
+			ey += 34
+		}
 		d := g.endTime.Sub(g.startTime)
-		msg := fmt.Sprintf("You did it! Your time was %02d:%02d.%03d",
+		msg := fmt.Sprintf("Your time: %02d:%02d.%03d",
 			int(d/time.Minute),
 			int(d/time.Second)%60,
 			int(d/time.Millisecond)%1000,
 		)
-		// Center the message horizontally
 		b := text.BoundString(buttonFont, msg)
-		x := (WindowWidth - (b.Max.X - b.Min.X)) / 2
-		text.Draw(screen, msg, buttonFont, x, WindowHeight/2-60, color.White)
+		text.Draw(screen, msg, buttonFont, (WindowWidth-(b.Max.X-b.Min.X))/2, WindowHeight/2-60, colGold)
 	}
 
 	// Draw Restart and Exit buttons on both Paused and Finished screens
