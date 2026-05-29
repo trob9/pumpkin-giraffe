@@ -1,4 +1,4 @@
-//Core player logic: world-space position, physics (gravity, collision with walls/floor), 
+//Core player logic: world-space position, physics (gravity, collision with walls/floor),
 //movement, respawning, pumpkin pickup, animation state, and sound-effect playback for footsteps, jumps, landings, etc.
 package game
 
@@ -40,6 +40,13 @@ const (
 	attackActiveHi = 12
 	attackCooldown = 10
 	attackReach    = 18.0 // how far in front of the giraffe the blade reaches (px)
+
+	// Dash: double-tap a direction for a short horizontal burst. Movement tech
+	// with a cooldown so it can't be spammed; respects walls.
+	dashDuration    = 10
+	dashSpeed       = 5.0
+	dashCooldown    = 22
+	doubleTapWindow = 14 // frames between two taps to count as a double-tap
 
 	// normalJumpVel is the upward speed applied when the player jumps.
 	normalJumpVel = -6.5
@@ -91,6 +98,13 @@ type Player struct {
 	// attackCD is the cooldown before the next slash can start.
 	attackTimer int
 	attackCD    int
+
+	// Dash state: dashTimer (active burst), dashCD (cooldown), dashDir (+1/-1),
+	// and per-direction tap timers + previous press state for double-tap detection.
+	dashTimer, dashCD     int
+	dashDir               float64
+	prevLeft, prevRight   bool
+	tapLeftCD, tapRightCD int
 
 	// Animation image slices for moving right and left:
 	walkR, walkL []*ebiten.Image
@@ -352,6 +366,38 @@ func (p *Player) Update(
 		p.facingRight = true
 	} else if intendedVX < 0 {
 		p.facingRight = false
+	}
+
+	// Dash: double-tap left or right for a quick burst. We detect a fresh press
+	// of a direction within doubleTapWindow frames of the previous press.
+	curLeft := Down(ActLeft) || ebiten.IsKeyPressed(ebiten.KeyLeft)
+	curRight := Down(ActRight) || ebiten.IsKeyPressed(ebiten.KeyRight)
+	if p.tapLeftCD > 0 {
+		p.tapLeftCD--
+	}
+	if p.tapRightCD > 0 {
+		p.tapRightCD--
+	}
+	if p.dashCD > 0 {
+		p.dashCD--
+	}
+	if curLeft && !p.prevLeft {
+		if p.tapLeftCD > 0 && p.dashCD == 0 && p.dashTimer == 0 {
+			p.dashTimer, p.dashDir, p.dashCD = dashDuration, -1, dashDuration+dashCooldown
+		}
+		p.tapLeftCD = doubleTapWindow
+	}
+	if curRight && !p.prevRight {
+		if p.tapRightCD > 0 && p.dashCD == 0 && p.dashTimer == 0 {
+			p.dashTimer, p.dashDir, p.dashCD = dashDuration, 1, dashDuration+dashCooldown
+		}
+		p.tapRightCD = doubleTapWindow
+	}
+	p.prevLeft, p.prevRight = curLeft, curRight
+	if p.dashTimer > 0 {
+		p.dashTimer--
+		intendedVX = p.dashDir * dashSpeed // override normal movement during the burst
+		p.facingRight = p.dashDir > 0
 	}
 
 	// If the player falls below the bottom of the screen, it costs a heart.

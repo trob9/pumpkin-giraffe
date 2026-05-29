@@ -270,6 +270,7 @@ func (g *Game) drawHowTo(screen *ebiten.Image) {
 		"Move: " + game.KeyName(game.Keys[game.ActLeft]) + " / " + game.KeyName(game.Keys[game.ActRight]) +
 			"   (arrow keys work too)",
 		"Jump: " + game.KeyName(game.Keys[game.ActJump]) + "    Sprint: hold " + game.KeyName(game.Keys[game.ActSprint]),
+		"Dash: double-tap a direction for a quick burst.",
 		"Sword: " + game.KeyName(game.Keys[game.ActAttack]) + " — time it to cut down a skeleton.",
 		"Push a boulder: hold " + game.KeyName(game.Keys[game.ActInteract]) + " and walk into it.",
 		"Extend neck: hold " + game.KeyName(game.Keys[game.ActNeck]) + " — hook a ledge above, release to climb.",
