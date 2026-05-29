@@ -67,6 +67,13 @@ func (p *Player) Draw(screen *ebiten.Image, camX, camY float64) {
 
 	// 4) Draw the chosen sprite onto the screen
 	screen.DrawImage(img, op)
+
+	// 5) If the neck-extend ability is active, draw the growing neck + lifted
+	//    head on top of the body. When the neck is fully retracted this is a
+	//    no-op, so normal rendering is unaffected.
+	if p.neck.Active() {
+		p.neck.Draw(screen, img, p.X-camX, p.Y-camY)
+	}
 }
 
 // loadAnimationSheet reads a horizontal sprite sheet from the embedded FS,

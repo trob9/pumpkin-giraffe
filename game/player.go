@@ -94,6 +94,10 @@ type Player struct {
 	// ridingPlatform — the moving platform the player is currently standing on (nil if none).
 	// Used to carry the player along with the platform's movement each frame.
 	ridingPlatform *MovingPlatform
+
+	// neck — state for the "neck extend" ability (hold Q). All logic lives in
+	// game/neck.go; this is the single field the ability needs on the Player.
+	neck Neck
 }
 
 // spawnX and spawnY define the starting position when a new Player is created.
@@ -221,6 +225,15 @@ func (p *Player) Update(
 ) {
 	// Track frames since last jump to enforce double-jump window
 	p.framesSinceJump++
+
+	// Neck-extend ability (hold Q). This grows/retracts the neck, evaluates the
+	// hook, and — while hoisting — drives the player's Y itself. When a hoist is
+	// in progress we skip the normal physics so the two don't fight; otherwise
+	// the neck is purely cosmetic state and gameplay continues as usual.
+	p.neck.Update(ebiten.IsKeyPressed(ebiten.KeyQ), p)
+	if p.neck.hoisting {
+		return
+	}
 
 	// Tile size in world units, for converting between pixel coords and tile indices
 	ts := float64(TileSize)
