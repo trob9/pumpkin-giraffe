@@ -161,10 +161,12 @@ func (e *Enemy) Update(px, py float64) {
 		}
 	}
 
-	e.timer--
-	if e.timer <= 0 {
-		e.timer = e.delay
-		e.idx = (e.idx + 1) % len(e.framesRight)
+	if n := len(e.framesRight); n > 0 {
+		e.timer--
+		if e.timer <= 0 {
+			e.timer = e.delay
+			e.idx = (e.idx + 1) % n
+		}
 	}
 }
 
