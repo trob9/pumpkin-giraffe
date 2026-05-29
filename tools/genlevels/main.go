@@ -162,6 +162,8 @@ type level struct {
 	// gate: end-of-level portal. gateRequired pumpkins are spent to pass.
 	gateX, gateY int
 	gateRequired int
+	// bg: background image (relative to the levels/ dir) for this map.
+	bg string
 	// pumpkins the solver is allowed to skip (e.g. reachable only by pushing a
 	// boulder, which the static solver can't model). Keyed by "col,row".
 	exemptPumpkins map[string]bool
@@ -199,7 +201,8 @@ func buildLevel1() level {
 		{x: px(56), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 96, speed: 0.6},
 	}
 	return level{name: "level1", g: g, plats: plats, spawnX: px(2), spawnY: px(groundTop - 4),
-		gateX: px(75), gateY: px(groundTop - 3), gateRequired: 3}
+		gateX: px(75), gateY: px(groundTop - 3), gateRequired: 3,
+		bg: "../assets/backgrounds/bg_meadow_day.png"}
 }
 
 // =====================================================================
@@ -236,7 +239,8 @@ func buildLevel2() level {
 		{x: px(54), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 200, speed: 0.8},
 	}
 	return level{name: "level2", g: g, plats: plats, spawnX: px(2), spawnY: px(groundTop - 4),
-		gateX: px(75), gateY: px(groundTop - 3), gateRequired: 4}
+		gateX: px(75), gateY: px(groundTop - 3), gateRequired: 4,
+		bg: "../assets/backgrounds/bg_dusk.png"}
 }
 
 // =====================================================================
@@ -326,6 +330,7 @@ func buildLevel3() level {
 		name: "level3", g: g, plats: plats,
 		spawnX: px(2), spawnY: px(groundTop - 4),
 		gateX: px(76), gateY: px(groundTop - 3), gateRequired: 5,
+		bg: "../assets/backgrounds/bg_cave.png",
 	}
 }
 
@@ -650,6 +655,10 @@ func (l level) toTiledJSON() tmap {
 			Properties: []tprop{{Name: "required", Type: "int", Value: float64(l.gateRequired)}},
 		})
 	}
+	bg := l.bg
+	if bg == "" {
+		bg = "night_background.png"
+	}
 	return tmap{
 		Height: H, Width: W, TileWidth: tileSize, TileHeight: tileSize,
 		Infinite: false, Orientation: "orthogonal", RenderOrder: "right-down",
@@ -658,7 +667,7 @@ func (l level) toTiledJSON() tmap {
 		Tilesets: []tset{{FirstGID: 1, Source: "../tilesets/platformer.tsx"}},
 		Layers: []tlayer{
 			{ID: 2, Type: "imagelayer", Name: "Image Layer 1", Opacity: 1, Visible: true,
-				Image: "night_background.png", ImageWidth: 1280, ImageHeight: 720},
+				Image: bg, ImageWidth: 1280, ImageHeight: 720},
 			{ID: 1, Type: "tilelayer", Name: "Tile Layer 1", Opacity: 1, Visible: true,
 				Width: W, Height: H, Data: data},
 			{ID: 3, Type: "objectgroup", Name: "objects", Opacity: 1, Visible: true, Objects: objs},

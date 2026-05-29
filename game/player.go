@@ -98,6 +98,8 @@ type Player struct {
 	// Single-frame images for jumping and interacting:
 	jumpR, jumpL         *ebiten.Image
 	interactR, interactL *ebiten.Image
+	// Sword-slash animation frames (3 each), for the attack effect.
+	slashR, slashL []*ebiten.Image
 
 	// Animation state for walking:
 	frameIndex, walkTimer, walkDelay int
@@ -153,6 +155,10 @@ func NewPlayer(assets embed.FS, onInteract func(string)) *Player {
 	interactR := loadPoseSheet(assets, "assets/sprites/player_interact_right.png")
 	interactL := loadPoseSheet(assets, "assets/sprites/player_interact_left.png")
 
+	// Sword-slash effect frames (48x16 sheet = 3 frames of 16x16).
+	slashR := loadAnimationSheet(assets, "assets/sprites/slash_right.png", 3)
+	slashL := loadAnimationSheet(assets, "assets/sprites/slash_left.png", 3)
+
 	// Calculate how many frames to wait between animation updates:
 	//   walkDelay = 60 frames ÷ walkFPS
 	//   idleDelay = (60 frames ÷ idleFPS) × some extra factor for slower idle blink
@@ -182,6 +188,8 @@ func NewPlayer(assets embed.FS, onInteract func(string)) *Player {
 		jumpL:     jl,
 		interactR: interactR,
 		interactL: interactL,
+		slashR:    slashR,
+		slashL:    slashL,
 
 		// set animation delays and initialize timers
 		walkDelay: walkDelay,

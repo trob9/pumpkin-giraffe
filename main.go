@@ -30,6 +30,7 @@ import (
 //go:embed assets/music/*.wav
 //go:embed assets/fonts/*.ttf
 //go:embed assets/ui/*.png
+//go:embed assets/backgrounds/*.png
 //go:embed levels/*.json
 //go:embed levels/*.png
 var Assets embed.FS
@@ -171,6 +172,27 @@ type Game struct {
 	pumpkinSystem         *PumpkinSystem        // manager for spawning and updating pumpkins
 	nextInteract          time.Time             // earliest time the next interaction is allowed
 	gateHintCD            int                   // cooldown so the "gate needs N" hint doesn't spam
+	ambient               *game.Ambient         // per-level atmosphere (particles + tint)
+}
+
+// ambientKindFor maps a level index to its time-of-day atmosphere.
+func ambientKindFor(idx int) game.AmbientKind {
+	switch idx {
+	case 1:
+		return game.AmbDay
+	case 2:
+		return game.AmbDusk
+	case 3:
+		return game.AmbCave
+	default:
+		return game.AmbNight
+	}
+}
+
+// resetAmbient rebuilds the atmosphere for the current level.
+func (g *Game) resetAmbient() {
+	b := g.buffer.Bounds()
+	g.ambient = game.NewAmbient(ambientKindFor(game.CurrentLevel), b.Dx(), b.Dy())
 }
 
 // NewGame constructs and wires up the Game, including the onInteract callback.
@@ -270,6 +292,7 @@ func NewGame(
 		g.ui.NewMessage, // callback for any interaction text
 	)
 
+	g.resetAmbient()
 	return g
 }
 
@@ -349,6 +372,7 @@ func (g *Game) Update() error {
 					Assets,
 					g.ui.NewMessage,
 				)
+				g.resetAmbient()
 
 				g.state = StatePlaying
 			}
@@ -372,6 +396,9 @@ func (g *Game) Update() error {
 	}
 	for _, b := range game.Levels[game.CurrentLevel].Boulders {
 		b.Update()
+	}
+	if g.ambient != nil {
+		g.ambient.Update()
 	}
 
 	// 4b) Update the player: movement, gravity, collisions, and animation
@@ -623,6 +650,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.buffer.DrawImage(p.Image, op)
 	}
 
+	// 5.5) Ambient atmosphere (drifting particles + lighting tint) over the scene.
+	if g.ambient != nil {
+		g.ambient.Draw(g.buffer)
+	}
+
 	// 6) Scale the offscreen buffer and render it to the actual screen
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(ZoomFactor, ZoomFactor)
@@ -752,6 +784,7 @@ func (g *Game) advanceLevel() {
 	g.pumpkinSpawned = false
 	g.pumpkinMissed = false
 	g.initialPumpkinDropped = false
+	g.resetAmbient()
 }
 
 // advanceOrFinish moves to the next level, or ends the run if this was the last.
@@ -776,6 +809,7 @@ func (g *Game) killAndRestartLevel() {
 	g.pumpkinSpawned = false
 	g.pumpkinMissed = false
 	g.initialPumpkinDropped = false
+	g.resetAmbient()
 }
 
 // main is the entry point for Pumpkin Giraffe. It sets up graphics, audio, game data,

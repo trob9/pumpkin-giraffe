@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"image"
 	"io/fs"
-	"math"
 
 	_ "image/png"
 
@@ -97,39 +96,25 @@ func (p *Player) Draw(screen *ebiten.Image, camX, camY float64) {
 	}
 }
 
-// drawSlash renders a quick crescent swoosh in front of the giraffe during a
-// sword swing. This is a procedural placeholder; a painted slash sprite can
-// replace it later by drawing the frame for p.AttackPhase() instead.
+// drawSlash renders the painted sword-slash crescent in front of the giraffe,
+// picking the frame for how far through the swing we are.
 func (p *Player) drawSlash(screen *ebiten.Image, camX, camY float64) {
-	pix := neckPixelImage()
-	baseX := p.X + p.Width
-	dir := 1.0
+	frames := p.slashR
+	x := p.X + p.Width - 4
 	if !p.facingRight {
-		dir = -1
-		baseX = p.X
+		frames = p.slashL
+		x = p.X - 12
 	}
-	// Brightness pulses across the swing so it reads as a swipe, not a static blob.
-	phase := float64(p.AttackPhase()) / attackDuration
-	alpha := float32(0.85 * math.Sin(phase*math.Pi))
-	if alpha < 0.05 {
+	if len(frames) == 0 {
 		return
 	}
-	for i := 0; i < 10; i++ {
-		t := float64(i) / 9.0
-		bulge := math.Sin(t * math.Pi) // lens shape: widest in the middle
-		w := 2 + bulge*attackReach
-		y := p.Y - 4 + t*(p.Height+8)
-		x := baseX
-		if dir < 0 {
-			x = baseX - w
-		}
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Scale(w, 2)
-		op.GeoM.Translate(x-camX, y-camY)
-		op.ColorScale.Scale(0.85, 0.95, 1, 1)
-		op.ColorScale.ScaleAlpha(alpha)
-		screen.DrawImage(pix, op)
+	idx := p.AttackPhase() * len(frames) / attackDuration
+	if idx >= len(frames) {
+		idx = len(frames) - 1
 	}
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(x-camX, p.Y-camY)
+	screen.DrawImage(frames[idx], op)
 }
 
 // loadAnimationSheet reads a horizontal sprite sheet from the embedded FS,

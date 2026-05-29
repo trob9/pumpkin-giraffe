@@ -26,7 +26,7 @@
    "visible": true,
    "x": 0,
    "y": 0,
-   "image": "night_background.png",
+   "image": "../assets/backgrounds/bg_meadow_day.png",
    "imagewidth": 1280,
    "imageheight": 720
   },

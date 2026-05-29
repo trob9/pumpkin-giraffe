@@ -83,9 +83,17 @@ func LoadTilesetFS(fsys fs.FS, path string) error {
 func DrawLevel(screen *ebiten.Image, camX, camY float64) {
 	lvl := Levels[CurrentLevel]
 
-	// 1) Background: draw behind everything if it exists
+	// 1) Background: scale the backdrop to fill the render buffer (the art is
+	//    authored at full 1280x720 but the buffer is half that), so its whole
+	//    composition shows rather than just the top-left corner.
 	if lvl.Bg != nil {
-		screen.DrawImage(lvl.Bg, nil)
+		bb := lvl.Bg.Bounds()
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Scale(
+			float64(screen.Bounds().Dx())/float64(bb.Dx()),
+			float64(screen.Bounds().Dy())/float64(bb.Dy()),
+		)
+		screen.DrawImage(lvl.Bg, op)
 	}
 
 	// 2) Tiles: iterate over each row and column in lvl.Tiles
