@@ -4,7 +4,6 @@
 package game
 
 import (
-	"image/color"
 	"math"
 	"math/rand"
 
@@ -25,13 +24,16 @@ type mote struct {
 	x, y, vx, vy, size, phase, blink float64
 }
 
-// Ambient owns a level's particle field and lighting tint.
+// Ambient owns a level's particle field and lighting tint. The tint is stored
+// as a normalised colour (0..1) plus an opacity, and drawn with PREMULTIPLIED
+// alpha so a light tint stays subtle instead of additively blowing out the scene.
 type Ambient struct {
-	kind  AmbientKind
-	w, h  float64
-	motes []mote
-	tint  color.RGBA // translucent overlay drawn over the whole scene
-	t     float64
+	kind                   AmbientKind
+	w, h                   float64
+	motes                  []mote
+	tintR, tintG, tintB    float32 // 0..1 tint colour
+	tintA                  float32 // 0..1 opacity
+	t                      float64
 }
 
 // NewAmbient builds the atmosphere for a viewport of w x h pixels.
@@ -40,13 +42,17 @@ func NewAmbient(kind AmbientKind, w, h int) *Ambient {
 	n := 0
 	switch kind {
 	case AmbDay:
-		n, a.tint = 26, color.RGBA{255, 244, 200, 14}
+		n = 26
+		a.tintR, a.tintG, a.tintB, a.tintA = 1.0, 0.96, 0.78, 0.06 // faint warm
 	case AmbDusk:
-		n, a.tint = 30, color.RGBA{255, 150, 90, 26}
+		n = 30
+		a.tintR, a.tintG, a.tintB, a.tintA = 1.0, 0.55, 0.32, 0.16 // warm orange
 	case AmbCave:
-		n, a.tint = 34, color.RGBA{20, 14, 40, 70}
+		n = 34
+		a.tintR, a.tintG, a.tintB, a.tintA = 0.12, 0.09, 0.24, 0.40 // dark indigo
 	default: // night
-		n, a.tint = 18, color.RGBA{40, 60, 120, 18}
+		n = 18
+		a.tintR, a.tintG, a.tintB, a.tintA = 0.18, 0.27, 0.5, 0.12 // cool blue
 	}
 	for i := 0; i < n; i++ {
 		a.motes = append(a.motes, a.spawn(rand.Float64()*a.h))
@@ -127,10 +133,11 @@ func (a *Ambient) Draw(screen *ebiten.Image) {
 		op.ColorScale.ScaleAlpha(float32(alpha))
 		screen.DrawImage(pix, op)
 	}
-	if a.tint.A > 0 {
+	if a.tintA > 0 {
 		op := &ebiten.DrawImageOptions{}
 		op.GeoM.Scale(a.w, a.h)
-		op.ColorScale.ScaleWithColor(a.tint)
+		// Premultiplied: RGB scaled by alpha so the overlay blends, not adds.
+		op.ColorScale.Scale(a.tintR*a.tintA, a.tintG*a.tintA, a.tintB*a.tintA, a.tintA)
 		screen.DrawImage(pix, op)
 	}
 }
