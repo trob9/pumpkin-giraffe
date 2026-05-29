@@ -363,18 +363,6 @@ func (g *Game) Update() error {
 
 	// 3) Handle screens before actual gameplay
 	switch g.state {
-	case StateTitle:
-		// look for a click on the Start button
-		mx, my := ebiten.CursorPosition()
-		if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) &&
-			mx >= g.startButton.Min.X && mx <= g.startButton.Max.X &&
-			my >= g.startButton.Min.Y && my <= g.startButton.Max.Y {
-
-			g.state = StatePlaying
-			g.startTime = time.Now() // begin the game timer
-		}
-		return nil // nothing else to do until we start
-
 	case StatePaused, StateFinished:
 		// in Paused or Finished, check Restart and Exit buttons
 		mx, my := ebiten.CursorPosition()
@@ -539,8 +527,7 @@ func (g *Game) Update() error {
 		gate.Update()
 		if g.player.Rect().Overlaps(gate.Rect()) {
 			if g.player.Pumpkins >= gate.Required {
-				g.player.Pumpkins -= gate.Required // pay the toll
-				g.advanceOrFinish()
+				g.advanceOrFinish() // toll met; pumpkins reset on advance
 			} else if g.gateHintCD == 0 {
 				g.ui.NewMessage(fmt.Sprintf("The gate needs %d pumpkins (you have %d).",
 					gate.Required, g.player.Pumpkins))
@@ -590,43 +577,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	switch g.state {
-	case StateTitle:
-		// Title screen: clear to black and show instructions + Start button
-		screen.Fill(color.Black)
-
-		// Instruction text lines
-		lines := []string{
-			"You are a short-necked giraffe and need to collect 5 pumpkins as fast as you can.",
-			"Try to be faster than your friends!",
-			"Press E to interact with barrels.",
-			"Kill monsters by jumping on their heads.",
-			"This game rewards glitch abuse and curious minds.",
-		}
-		y := 100
-		for _, l := range lines {
-			// Measure text width so we can center it horizontally
-			b := text.BoundString(hudFont, l)
-			x := (WindowWidth - (b.Max.X - b.Min.X)) / 2
-			text.Draw(screen, l, hudFont, x, y, color.White)
-			y += 30
-		}
-
-		// Draw the START button background
-		ebitenutil.DrawRect(screen,
-			float64(g.startButton.Min.X), float64(g.startButton.Min.Y),
-			float64(g.startButton.Dx()), float64(g.startButton.Dy()),
-			color.RGBA{0, 0, 128, 200},
-		)
-		// Draw the START label centered in the button
-		tb := "START"
-		tbB := text.BoundString(buttonFont, tb)
-		text.Draw(screen, tb, buttonFont,
-			g.startButton.Min.X+(g.startButton.Dx()-tbB.Dx())/2,
-			g.startButton.Min.Y+btnH/2+8,
-			color.White,
-		)
-		return // nothing else to draw on title screen
-
 	case StatePaused:
 		// Paused screen: semi-transparent overlay + "PAUSED" text
 		screen.Fill(color.RGBA{0, 0, 0, 180})
@@ -668,6 +618,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.exitButton.Min.Y+btnH/2+8,
 		color.White,
 	)
+	// Hint that M returns to the main menu.
+	menuHint := "Press M for the main menu"
+	mb := text.BoundString(hudFont, menuHint)
+	text.Draw(screen, menuHint, hudFont, (WindowWidth-(mb.Max.X-mb.Min.X))/2, g.exitButton.Max.Y+50, color.RGBA{170, 170, 190, 255})
 
 	// Only draw gameplay world and HUD if the game is active
 	if g.state != StatePlaying {
@@ -843,13 +797,16 @@ func applySpawn(idx int) {
 	}
 }
 
-// advanceLevel moves to the next level after the player collects 5 pumpkins:
+// advanceLevel moves to the next level once the gate's toll is met:
 // reset the count, move the giraffe to the new spawn, and clear per-level pumpkin
 // state. The timer keeps running, so a run is timed across all levels.
 func (g *Game) advanceLevel() {
 	game.CurrentLevel++
 	applySpawn(game.CurrentLevel)
-	// Pumpkins persist as currency across levels; reaching a gate heals you.
+	// Pumpkins are per-level: each field's gate is opened by the pumpkins you
+	// gather in that field, so the count resets on advance. Reaching a gate also
+	// heals you back to full hearts (a checkpoint of sorts).
+	g.player.Pumpkins = 0
 	g.player.Health = game.MaxHealth
 	g.player.Respawn()
 	g.pumpkins = nil

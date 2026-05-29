@@ -78,21 +78,3 @@ func (p *Player) IsBesideInteractableObject() bool {
 	return isInteractableObject(tileID)
 }
 
-// ShouldTriggerInteraction determines if the interaction key (E) was just pressed
-// this frame and sets up the one-frame interaction pose if the player is beside
-// something interactable. It returns true only on the exact frame the key transitioned.
-func (p *Player) ShouldTriggerInteraction() bool {
-	// Check current E-key state
-	pressed := ebiten.IsKeyPressed(ebiten.KeyE)
-	// A new press occurs when it's down now but was up last frame
-	nowUse := pressed && !p.prevUse
-
-	// Remember current state for next frame's edge detection
-	p.prevUse = pressed
-
-	// If the key is held and the player is next to an interactable object,
-	// set the interacting flag for rendering the use animation.
-	p.interacting = pressed && p.IsBesideInteractableObject()
-
-	return nowUse
-}

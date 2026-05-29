@@ -1,49 +1,70 @@
 # Pumpkin Giraffe
 
-A tiny speedrunning platformer about a short-necked giraffe, a fistful of pumpkins, and a clock that never stops ticking. Built in Go with [Ebiten](https://ebitengine.org/).
+A short-necked giraffe platformer with a little soul to it. Gather pumpkins to
+pay the old portals' tolls, cut down the bonefolk that woke in the patch, and
+journey from a starlit night, through a meadow morning and a burning dusk, down
+into the cave at the end of it all. Built in Go with [Ebiten](https://ebitengine.org/).
 
 ![Pumpkin Giraffe gameplay](docs/screenshot.png)
 
-## The point of the game
+## The loop
 
-Grab **5 pumpkins per level, across 4 levels, as fast as humanly possible.**
+Each field is a level. Gather the pumpkins scattered across it, then reach the
+glowing **gate** at the far end — it opens once you're carrying enough pumpkins
+to pay its toll, and whisks you to the next field (healing you to full hearts on
+the way). Clear all the fields against a running speedrun clock.
 
-A timer starts the instant you begin and runs in the top-centre of the screen down to the millisecond (`00:05.030`). It does **not** reset between levels — collect your fifth pumpkin and you're whisked straight to the next map with the clock still ticking. Clear the final level and the game freezes your time and throws up a **"You did it! Your time was MM:SS.mmm"**. That single number is your whole run, start to finish. Beat it. Then beat it again.
+You have **three hearts**. A skeleton's touch from the side costs one and knocks
+you back (with a moment of invulnerability); fall off the world and it costs one
+too. Lose all three and the field resets — but the clock keeps ticking.
 
-Because every pumpkin is mandatory, the route *is* the puzzle: the fastest path that still touches all five, on every map.
+## What's out there
 
-Everything is built around shaving frames off that route:
+- **Skeletons.** Patrollers pace their stretch; **chasers** (the rusted,
+  red-eyed ones) hunt you down if you stray into their sight, and give up if you
+  get far enough away. Stomp one from above to pop it and bounce, or **time a
+  sword slash** to cut it down. Mistime the swing and you'll eat a hit.
+- **The gate.** A portal at each field's end. It glows warm when you can afford
+  it, cold when you can't. Pumpkins are the key.
+- **Moving platforms, boulders, torii.** Ride the platforms (they're solid both
+  ways — mind your head), push a boulder under an out-of-reach ledge to make a
+  step, and climb the torii gates that span the gaps.
+- **NPCs.** An old long-necked Elder, an earnest Fox, and a hooded Wanderer
+  stand along the way. Walk up and press your interact key to talk — the Elder
+  carries the lore, the Fox the tips, the Wanderer the dread.
 
-- **Sprint** (hold Shift) multiplies your speed by 2.5×. You'll want it held basically the whole run, but it makes platforms and pits far less forgiving — the classic speedrun trade of control for pace.
-- **Moving platforms** slide back and forth on fixed paths, horizontal or vertical. They bridge gaps and lift you to high pumpkins, but they only go as fast as they go — mistime your hop and you wait, or fall. They're solid both ways, so you'll bonk your head jumping up into one. Riding them well is most of the time save on the later maps.
-- **Pushable boulders** (introduced on level 4) — hold `E` and walk to shove one along the ground (you move slower while pushing, and sprint won't speed it up). Line one up under an out-of-reach pumpkin and use it as a step. Without `E` held, a boulder is a solid wall.
-- **The neck** — hold `Q` and the short-necked giraffe extends his neck upward. Hook his head over the lip of a ledge, release `Q`, and he hoists his whole body up onto it. A second way up that doesn't need a jump.
-- **Skull enemies** patrol the platforms. Touch one from the side and you die and respawn — a death is a run-killer. Land on their heads, though, and you stomp them and bounce.
-- **Pumpkins** are the goal, not a detour: five per level, scattered on ground, ledges, and out over the void where only a platform ride — or a well-timed double-jump chain — will reach them.
+## Tricks
 
-## The four levels
-
-The original map first, then three new ones on a gentle difficulty ramp:
-
-1. **Pumpkin Patch** — the original level.
-2. **Rolling Start** — gentle intro: mostly solid ground, two slow platforms bridging small gaps.
-3. **Gap Gauntlet** — more gaps, a vertical lift, a torii staircase, pumpkins that need a platform ride.
-4. **Skyline Sprint** — sparse ground, fast platforms, pumpkins out over the void and up on the high torii, and the pushable boulder.
+- **Sprint** — hold to move at 2.5×.
+- **Dash** — double-tap a direction for a quick burst (short cooldown).
+- **Double-jump chain** — land on a ledge near the peak of a jump and jump again
+  for a boosted launch.
+- **Extend the neck** (the giraffe's party trick) — hold the neck key and the
+  neck grows upward; hook the head over a ledge above you, release, and it hoists
+  your whole body up. A short neck, it turns out, has its uses.
 
 ## Controls
 
-| Action | Keys |
+All controls are **rebindable** in **Settings**. Defaults:
+
+| Action | Key |
 |---|---|
-| Move left / right | `A` / `D` or `←` / `→` |
-| Sprint (2.5× speed) | hold `Shift` |
-| Jump | `Space` or `↑` |
-| Interact / push boulder | `E` (hold `E` and walk to push) |
-| Extend neck | hold `Q` |
-| Quit | `Esc` |
+| Move | `A` / `D` (or arrow keys) |
+| Jump | `Space` (or `↑`) |
+| Sprint | hold `Shift` |
+| Sword slash | `F` |
+| Extend neck | `Q` |
+| Interact / push boulder / talk | `E` |
+| Dash | double-tap a direction |
+| Pause | `Esc` · Main menu (from pause) | `M` |
+
+The main menu (keyboard: `↑`/`↓` + `Enter`) has **Play**, **How to Play**,
+**Lore**, **Settings** (rebind keys), and **Quit**.
 
 ## Run it
 
-Grab the latest build, or build it yourself — it's a single self-contained binary with every sprite, sound, and the music baked in (no loose asset files to ship).
+A single self-contained binary — every sprite, sound, background and the music
+are baked in, so it runs anywhere with nothing alongside it.
 
 ```bash
 git clone https://github.com/TRob9/pumpkin-giraffe.git
@@ -52,18 +73,18 @@ go build -o pumpkin-giraffe .
 ./pumpkin-giraffe        # Windows: .\pumpkin-giraffe.exe
 ```
 
-You'll need [Go](https://go.dev/dl/) 1.24 or newer. The first build downloads Ebiten and its dependencies automatically.
-
-## A note on the giraffe
-
-He has a short neck. Yes, on purpose. A giraffe who can't reach the high leaves has to be good at *something* — so he jumps.
+You'll need [Go](https://go.dev/dl/) 1.24 or newer; the first build pulls Ebiten
+automatically.
 
 ## Tech
 
 - **Language:** Go (1.24+)
-- **Engine:** [Ebiten](https://ebitengine.org/) v2 — pure-Go 2D game library
-- **Assets:** embedded into the binary via Go's `//go:embed`, so the exe runs anywhere with nothing alongside it
-- **Resolution:** 1280×720 logical, scaled to the window
+- **Engine:** [Ebiten](https://ebitengine.org/) v2 — pure-Go 2D
+- **Assets:** embedded via `//go:embed`. Sprites, backgrounds, hearts, the slash,
+  the enemy variants and NPCs are procedurally painted by `tools/art`; the four
+  levels are authored by `tools/genlevels`, which also runs an arc-based
+  reachability solver so no pumpkin is ever placed out of reach.
+- **Resolution:** 1280×720, rendered at a 2× pixel scale.
 
 ---
 

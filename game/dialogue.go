@@ -33,6 +33,9 @@ type dialogue struct {
 
 // start opens the box on the first line of a fresh conversation.
 func (d *dialogue) start(speaker who, lines []string) {
+	if len(lines) == 0 {
+		return // nothing to say — don't open an empty box
+	}
 	d.speaker = speaker
 	d.lines = lines
 	d.line = 0
@@ -168,15 +171,22 @@ func (d *dialogue) draw(screen *ebiten.Image, w, h int, face, nameFace font.Face
 	}
 }
 
-// fillRect draws a solid filled rectangle. We build our own instead of pulling
-// in ebitenutil so this file has no extra dependencies and the colour blends
-// with alpha correctly.
+// dlgPixel is a shared 1x1 white image scaled to draw rectangles, so fillRect
+// allocates nothing per call (it's invoked ~10x/frame while a box is open).
+var dlgPixel *ebiten.Image
+
+// fillRect draws a solid filled rectangle by scaling a shared 1x1 pixel and
+// tinting it — no per-call image allocation.
 func fillRect(dst *ebiten.Image, x, y, w, h int, c color.Color) {
-	sub := ebiten.NewImage(w, h)
-	sub.Fill(c)
+	if dlgPixel == nil {
+		dlgPixel = ebiten.NewImage(1, 1)
+		dlgPixel.Fill(color.White)
+	}
 	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(float64(w), float64(h))
 	op.GeoM.Translate(float64(x), float64(y))
-	dst.DrawImage(sub, op)
+	op.ColorScale.ScaleWithColor(c)
+	dst.DrawImage(dlgPixel, op)
 }
 
 // wrapText breaks s into rows that each fit within maxW pixels for the given

@@ -48,7 +48,8 @@ const (
 	tBeamStub = 39 // solid + standable, has a downward pillar stub
 	tLeg      = 5  // non-solid pillar shaft
 	tPumpkin  = 48 // collectible
-	tEnemy    = 72 // enemy spawn marker
+	tEnemy    = 72 // patroller skull spawn marker
+	tChaser   = 73 // chaser skull spawn marker (faster, hunts the giraffe)
 	tBoulder  = 71 // pushable-boulder spawn marker
 	tBarrel   = 11 // standard barrel (solid)
 )
@@ -143,6 +144,7 @@ func (g *grid) block3x3(x, row int) {
 
 func (g *grid) pumpkin(x, row int) { g.set(x, row, tPumpkin) }
 func (g *grid) enemy(x, row int)   { g.set(x, row, tEnemy) }
+func (g *grid) chaser(x, row int)  { g.set(x, row, tChaser) }
 func (g *grid) boulder(x, row int) { g.set(x, row, tBoulder) }
 func (g *grid) barrel(x, row int)  { g.set(x, row, tBarrel) }
 
@@ -230,7 +232,7 @@ func buildLevel2() level {
 	g.pumpkin(59, 30)         // on the mid gate, off the long sweeping platform
 
 	g.enemy(26, groundTop-1)
-	g.enemy(46, groundTop-1)
+	g.chaser(46, groundTop-1) // a hunter appears on the dusk fields
 	g.barrel(12, groundTop-1)
 
 	plats := []platDef{
@@ -312,6 +314,7 @@ func buildLevel3() level {
 
 	g.torii(21, 31, 5) // low gate carrying the col-23 pumpkin
 
+	g.chaser(22, groundTop-1) // the cave crawls with hunters
 	g.enemy(75, groundTop-1)
 
 	// Platform plan (kept clear of the boulder pit/ledge so the boulder stays the
@@ -714,7 +717,7 @@ func renderPreview(l level, tileset, bg image.Image, outPath string) error {
 	yellow := image.NewUniform(color.RGBA{240, 220, 60, 120})
 	for r := 0; r < H; r++ {
 		for c := 0; c < W; c++ {
-			if l.g[r][c] == tEnemy {
+			if l.g[r][c] == tEnemy || l.g[r][c] == tChaser {
 				fillRect(dst, c*tileSize, r*tileSize, tileSize, tileSize, red)
 			}
 		}

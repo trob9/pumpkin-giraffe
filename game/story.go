@@ -19,9 +19,9 @@ import (
 )
 
 // talkReach is how close (in pixels, centre-to-centre) the giraffe must be to
-// an NPC before pressing the talk key opens a conversation. ~20px is "standing
-// right next to them" given both are 16px wide.
-const talkReach = 20
+// an NPC before pressing the talk key opens a conversation. A bit forgiving so
+// you don't have to land on the exact pixel — covers standing beside them.
+const talkReach = 34
 
 // StoryManager owns all narrative state: the placed NPCs per level, the loaded
 // sprites, the fonts, and the single conversation that may be open at a time.
