@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	TileSize      = 16 // size of each square tile in pixels
-	EnemySpawnID  = 72 // special tile ID reserved for enemy spawn points
+	TileSize       = 16 // size of each square tile in pixels
+	EnemySpawnID   = 72 // tile ID that spawns a patroller skull, then is cleared
+	ChaserSpawnID  = 73 // tile ID that spawns a chaser skull, then is cleared
 	BoulderSpawnID = 71 // tile ID that spawns a pushable boulder, then is cleared
 )
 

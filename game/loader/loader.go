@@ -149,6 +149,11 @@ func LoadLevelFS(fsys fs.FS, path string) (game.Level, error) {
 				sx := float64(x * game.TileSize)
 				sy := float64((y + 1) * game.TileSize)
 				enemies = append(enemies, game.NewEnemyFS(fsys, sx, sy))
+			case game.ChaserSpawnID:
+				tiles[y][x] = 0
+				sx := float64(x * game.TileSize)
+				sy := float64((y + 1) * game.TileSize)
+				enemies = append(enemies, game.NewChaserFS(fsys, sx, sy))
 			case game.BoulderSpawnID:
 				// Clear the marker; the boulder will fall to the ground below
 				tiles[y][x] = 0

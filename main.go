@@ -410,7 +410,7 @@ func (g *Game) Update() error {
 	lvl := game.Levels[game.CurrentLevel]
 	alive := 0
 	for _, en := range lvl.Enemies {
-		en.Update()
+		en.Update(g.player.X, g.player.Y)
 		if !en.Alive {
 			continue
 		}
