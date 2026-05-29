@@ -33,6 +33,14 @@ const (
 	// invulnFrames is the immunity window (in frames, 60/s) after taking a hit.
 	invulnFrames = 75
 
+	// Sword slash timing (frames). The blade only deals damage during the active
+	// window [attackActiveLo, attackActiveHi] of the swing, so a kill must be timed.
+	attackDuration = 18
+	attackActiveLo = 4
+	attackActiveHi = 12
+	attackCooldown = 10
+	attackReach    = 18.0 // how far in front of the giraffe the blade reaches (px)
+
 	// normalJumpVel is the upward speed applied when the player jumps.
 	normalJumpVel = -6.5
 	// doubleJumpVel is a stronger lift for the second jump (50% more than normal).
@@ -78,6 +86,11 @@ type Player struct {
 	// invuln — frames of damage immunity remaining after taking a hit; the sprite
 	// also blinks while this is active.
 	invuln int
+
+	// attackTimer counts down through a sword-slash animation (0 = not slashing).
+	// attackCD is the cooldown before the next slash can start.
+	attackTimer int
+	attackCD    int
 
 	// Animation image slices for moving right and left:
 	walkR, walkL []*ebiten.Image
@@ -231,6 +244,30 @@ func (p *Player) LoseHeart() bool {
 // Invulnerable reports whether the player is in the post-hit immunity window.
 func (p *Player) Invulnerable() bool { return p.invuln > 0 }
 
+// Attacking reports whether a sword slash is currently animating (for drawing).
+func (p *Player) Attacking() bool { return p.attackTimer > 0 }
+
+// AttackPhase returns how many frames into the current swing we are
+// (0..attackDuration), used to pick the slash animation frame.
+func (p *Player) AttackPhase() int { return attackDuration - p.attackTimer }
+
+// AttackHitbox returns the blade's damage rectangle, and true only during the
+// active window of the swing — so a hit must be timed. Otherwise it returns false.
+func (p *Player) AttackHitbox() (image.Rectangle, bool) {
+	if p.attackTimer <= 0 {
+		return image.Rectangle{}, false
+	}
+	e := attackDuration - p.attackTimer
+	if e < attackActiveLo || e > attackActiveHi {
+		return image.Rectangle{}, false
+	}
+	top, bot := int(p.Y-4), int(p.Y+p.Height)
+	if p.facingRight {
+		return image.Rect(int(p.X+p.Width), top, int(p.X+p.Width+attackReach), bot), true
+	}
+	return image.Rect(int(p.X-attackReach), top, int(p.X), bot), true
+}
+
 // currentFloorID returns the tile index directly beneath the player's feet.
 // This helps determine what type of ground the player is standing on.
 func (p *Player) currentFloorID() int {
@@ -279,6 +316,20 @@ func (p *Player) Update(
 	// normal physics that would otherwise pull the player back down.
 	if p.neck.Update(ebiten.IsKeyPressed(ebiten.KeyQ), p) {
 		return
+	}
+
+	// Sword slash: advance any swing in progress, then start a new one on the
+	// attack key (F) once the cooldown has elapsed. You can move while slashing.
+	if p.attackCD > 0 {
+		p.attackCD--
+	}
+	if p.attackTimer > 0 {
+		p.attackTimer--
+		if p.attackTimer == 0 {
+			p.attackCD = attackCooldown
+		}
+	} else if p.attackCD == 0 && ebiten.IsKeyPressed(ebiten.KeyF) {
+		p.attackTimer = attackDuration
 	}
 
 	// Tile size in world units, for converting between pixel coords and tile indices

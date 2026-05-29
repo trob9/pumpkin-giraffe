@@ -416,6 +416,15 @@ func (g *Game) Update() error {
 		}
 		alive++
 
+		// Sword slash (timed): a live blade hitbox overlapping the enemy cuts it
+		// down without the giraffe taking damage this frame.
+		if hb, ok := g.player.AttackHitbox(); ok && hb.Overlaps(en.Rect()) {
+			en.Alive = false
+			g.monsterDeathSnd.Rewind()
+			g.monsterDeathSnd.Play()
+			continue
+		}
+
 		// if player overlaps enemy...
 		pr, er := g.player.Rect(), en.Rect()
 		if pr.Overlaps(er) {

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"image"
 	"io/fs"
+	"math"
 
 	_ "image/png"
 
@@ -16,6 +17,11 @@ import (
 // It chooses between interaction, jump, walk, or idle sprites based on state,
 // applies the camera offset, and advances the idle-cycle animation.
 func (p *Player) Draw(screen *ebiten.Image, camX, camY float64) {
+	// Sword slash effect, drawn in front regardless of blink/pose state.
+	if p.Attacking() {
+		p.drawSlash(screen, camX, camY)
+	}
+
 	// Blink while invulnerable after taking a hit: skip drawing on alternating
 	// short intervals so the giraffe flickers.
 	if p.invuln > 0 && (p.invuln/4)%2 == 1 {
@@ -88,6 +94,41 @@ func (p *Player) Draw(screen *ebiten.Image, camX, camY float64) {
 		p.neck.Draw(screen, neckBody, 7, p.X-camX, p.Y-camY)
 	} else {
 		screen.DrawImage(img, op)
+	}
+}
+
+// drawSlash renders a quick crescent swoosh in front of the giraffe during a
+// sword swing. This is a procedural placeholder; a painted slash sprite can
+// replace it later by drawing the frame for p.AttackPhase() instead.
+func (p *Player) drawSlash(screen *ebiten.Image, camX, camY float64) {
+	pix := neckPixelImage()
+	baseX := p.X + p.Width
+	dir := 1.0
+	if !p.facingRight {
+		dir = -1
+		baseX = p.X
+	}
+	// Brightness pulses across the swing so it reads as a swipe, not a static blob.
+	phase := float64(p.AttackPhase()) / attackDuration
+	alpha := float32(0.85 * math.Sin(phase*math.Pi))
+	if alpha < 0.05 {
+		return
+	}
+	for i := 0; i < 10; i++ {
+		t := float64(i) / 9.0
+		bulge := math.Sin(t * math.Pi) // lens shape: widest in the middle
+		w := 2 + bulge*attackReach
+		y := p.Y - 4 + t*(p.Height+8)
+		x := baseX
+		if dir < 0 {
+			x = baseX - w
+		}
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Scale(w, 2)
+		op.GeoM.Translate(x-camX, y-camY)
+		op.ColorScale.Scale(0.85, 0.95, 1, 1)
+		op.ColorScale.ScaleAlpha(alpha)
+		screen.DrawImage(pix, op)
 	}
 }
 
