@@ -528,6 +528,9 @@ func (g *Game) Update() error {
 		gate.Update()
 		if g.player.Rect().Overlaps(gate.Rect()) {
 			if g.player.Pumpkins >= gate.Required {
+				g.pumpkinSnd.Rewind()
+				g.pumpkinSnd.Play()
+				g.ui.NewMessage("The gate opens...")
 				g.advanceOrFinish() // toll met; pumpkins reset on advance
 			} else if g.gateHintCD == 0 {
 				g.ui.NewMessage(fmt.Sprintf("The gate needs %d pumpkins (you have %d).",
