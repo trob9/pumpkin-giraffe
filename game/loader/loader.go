@@ -136,17 +136,24 @@ func LoadLevelFS(fsys fs.FS, path string) (game.Level, error) {
 		bgImg.DrawImage(img, opts)
 	}
 
-	// 3) Scan the tile grid for enemy spawn points
+	// 3) Scan the tile grid for enemy and boulder spawn points
 	var enemies []*game.Enemy
+	var boulders []*game.Boulder
 	for y := range tiles {
 		for x, id := range tiles[y] {
-			if id == game.EnemySpawnID {
+			switch id {
+			case game.EnemySpawnID:
 				// Clear the spawn tile so it isn’t drawn as floor
 				tiles[y][x] = 0
 				// Convert tile coords to world pixels: align bottom of sprite
 				sx := float64(x * game.TileSize)
 				sy := float64((y + 1) * game.TileSize)
 				enemies = append(enemies, game.NewEnemyFS(fsys, sx, sy))
+			case game.BoulderSpawnID:
+				// Clear the marker; the boulder will fall to the ground below
+				tiles[y][x] = 0
+				boulders = append(boulders,
+					game.NewBoulder(float64(x*game.TileSize), float64(y*game.TileSize)))
 			}
 		}
 	}
@@ -163,6 +170,7 @@ func LoadLevelFS(fsys fs.FS, path string) (game.Level, error) {
 		Bg:        bgImg,
 		Enemies:   enemies,
 		Platforms: platforms,
+		Boulders:  boulders,
 		SpawnX:    spawnX,
 		SpawnY:    spawnY,
 	}, nil

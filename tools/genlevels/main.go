@@ -3,13 +3,14 @@
 // Levels are authored here in code using motif helpers that mirror the visual
 // grammar of the original hand-made map: ground is a solid grass-top lip (50)
 // over a decorative dirt/rock body (56/80); floating "torii" platforms are a
-// 37/39/38 beam with non-solid 5/6 legs hanging beneath; standalone blocks are
-// the 49/50/51 + 55/56/57 + 61/62/63 stack. Pumpkins are tile 48, enemy spawns
-// are tile 72, barrels are 11/84/90.
+// 37/39/38 beam (the stub-bearing tiles) carried by 5-pillar legs that run all
+// the way down past the map bottom; standalone blocks are the 49/50/51 stack.
+// Pumpkins are tile 48, enemy spawns 72, boulder spawns 71, barrels 11/84/90.
 //
-// For each level it writes a Tiled-format JSON to levels/ (openable in Tiled)
-// and renders a preview PNG to tools/genlevels/preview/ using the real tileset,
-// so the layout can be eyeballed without playing through.
+// It writes a Tiled-format JSON per level to levels/ and renders a preview PNG
+// to tools/genlevels/preview/ with a reachability overlay, then runs an
+// arc-based reachability solver that fails the build if any pumpkin is
+// impossible to reach and reports which ones need the double-jump chain.
 //
 // Run from the project root:  go run ./tools/genlevels
 package main
@@ -26,24 +27,34 @@ import (
 )
 
 const (
-	W, H     = 80, 45 // level size in tiles (1280x720 at 16px)
-	tileSize = 16
+	W, H      = 80, 45 // level size in tiles (1280x720 at 16px)
+	tileSize  = 16
 	groundTop = 38 // row of the main ground surface
 )
 
-// ---- tile IDs (map values), matching the original map's vocabulary ----
+// tile IDs (map values), matching the original map's vocabulary
 const (
 	tGrassTop = 50 // solid surface you stand on
 	tDirt     = 56 // non-solid body fill
 	tBase     = 80 // non-solid dark base row
-	tBeamL    = 37 // platform left cap (solid)
-	tBeamM    = 39 // platform middle span (solid)
-	tBeamR    = 38 // platform right cap (solid)
+	tBeamL    = 37 // torii beam left cap (solid, has pillar stub)
+	tBeamM    = 39 // torii beam middle (solid, has pillar stub)
+	tBeamR    = 38 // torii beam right cap (solid, has pillar stub)
 	tLeg      = 5  // non-solid pillar shaft
-	tFoot     = 6  // non-solid pillar foot
 	tPumpkin  = 48 // collectible
 	tEnemy    = 72 // enemy spawn marker
+	tBoulder  = 71 // pushable-boulder spawn marker
 	tBarrel   = 11 // standard barrel (solid)
+)
+
+// ---- physics, mirrored from the game so the solver matches real jumps ----
+const (
+	gravity   = 0.26
+	termVy    = 3.0
+	walkSpd   = 1.5
+	sprintSpd = 1.5 * 2.5
+	jumpV     = -6.5
+	boostV    = -6.5 * 1.5
 )
 
 // grid is the tile layer being built; [row][col], 0 = empty.
@@ -68,9 +79,12 @@ func (g *grid) ground(x0, x1, topRow int) {
 	}
 }
 
-// torii draws a floating platform: a beam of `width` tiles at (x,row) with
-// non-solid legs hanging from each end down `legH` tiles, ending in a foot.
-func (g *grid) torii(x, row, width, legH int) {
+// torii draws a floating platform: a beam of `width` tiles at (x,row) whose two
+// pillar legs (tile 5) run from just below the beam all the way to the map
+// bottom — planted, not floating. Legs sit one tile in from each cap so the
+// caps overhang, matching the original map's torii and lining the legs up under
+// the beam tiles' connection stubs.
+func (g *grid) torii(x, row, width int) {
 	for i := 0; i < width; i++ {
 		id := tBeamM
 		if i == 0 {
@@ -80,11 +94,21 @@ func (g *grid) torii(x, row, width, legH int) {
 		}
 		g.set(x+i, row, id)
 	}
-	for _, c := range []int{x, x + width - 1} {
-		for r := row + 1; r <= row+legH; r++ {
+	// Two legs, inset one tile from each cap so the caps overhang (the original
+	// torii look). For narrow beams where the inset legs would coincide, fall
+	// back to legs directly under the caps so there are still two distinct legs.
+	left, right := x+1, x+width-2
+	if right <= left {
+		left, right = x, x+width-1
+	}
+	legCols := []int{left, right}
+	if left == right {
+		legCols = []int{left}
+	}
+	for _, c := range legCols {
+		for r := row + 1; r < H; r++ {
 			g.set(c, r, tLeg)
 		}
-		g.set(c, row+legH+1, tFoot)
 	}
 }
 
@@ -100,58 +124,50 @@ func (g *grid) block3x3(x, row int) {
 
 func (g *grid) pumpkin(x, row int) { g.set(x, row, tPumpkin) }
 func (g *grid) enemy(x, row int)   { g.set(x, row, tEnemy) }
+func (g *grid) boulder(x, row int) { g.set(x, row, tBoulder) }
 func (g *grid) barrel(x, row int)  { g.set(x, row, tBarrel) }
 
 // platDef describes a moving platform written into the object layer.
 type platDef struct {
-	x, y, w, h    int     // pixels; (x,y) top-left
-	axis          string  // "x" or "y"
-	rng           float64 // travel distance in pixels
-	speed         float64 // pixels per frame
+	x, y, w, h int
+	axis       string
+	rng        float64
+	speed      float64
 }
 
-// level bundles everything one map needs.
 type level struct {
-	name   string
-	g      grid
-	plats  []platDef
-	spawnX int
-	spawnY int
+	name           string
+	g              grid
+	plats          []platDef
+	spawnX, spawnY int
+	// pumpkins the solver is allowed to skip (e.g. reachable only by pushing a
+	// boulder, which the static solver can't model). Keyed by "col,row".
+	exemptPumpkins map[string]bool
 }
 
-// px converts a tile column/row to a top-left pixel coordinate.
 func px(tiles int) int { return tiles * tileSize }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Level 1 — "Rolling Start": gentle intro to moving platforms.
-// Mostly solid ground with two small gaps bridged by slow horizontal platforms.
-// ---------------------------------------------------------------------------
+// =====================================================================
 func buildLevel1() level {
 	var g grid
-	// continuous ground in three segments, two gaps between them
 	g.ground(0, 24, groundTop)
 	g.ground(34, 54, groundTop)
 	g.ground(64, 79, groundTop)
 
-	// a couple of low torii to hop on, plus a 3x3 block landmark
-	g.torii(14, 32, 4, 4)
+	g.torii(13, 30, 4)
 	g.block3x3(46, 35)
 
-	// pumpkins: a friendly trail leading rightward, all reachable with single
-	// jumps (the torii stays decorative so nothing needs the secret double jump)
 	g.pumpkin(6, groundTop-1)
-	g.pumpkin(30, 34) // floats above moving platform 1 — grab it while riding
+	g.pumpkin(30, 34) // above moving platform 1 — grab while riding
 	g.pumpkin(40, groundTop-1)
-	g.pumpkin(47, 34) // on the 3x3 block (single jump up)
+	g.pumpkin(47, 34) // on the 3x3 block
 	g.pumpkin(72, groundTop-1)
 
-	// one slow enemy on the middle segment
 	g.enemy(50, groundTop-1)
-
-	// a barrel for flavour near the start
 	g.barrel(10, groundTop-1)
 
-	// two horizontal moving platforms, one per gap, slow and forgiving
 	plats := []platDef{
 		{x: px(26), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 80, speed: 0.6},
 		{x: px(56), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 96, speed: 0.6},
@@ -159,10 +175,10 @@ func buildLevel1() level {
 	return level{name: "level1", g: g, plats: plats, spawnX: px(2), spawnY: px(groundTop - 4)}
 }
 
-// ---------------------------------------------------------------------------
-// Level 2 — "Gap Gauntlet": medium. More gaps, a vertical lift, static torii
-// to chain between, a couple of enemies, pumpkins that need a platform ride.
-// ---------------------------------------------------------------------------
+// =====================================================================
+// Level 2 — "Gap Gauntlet": medium. Gaps, a vertical lift, a torii
+// staircase, and a pumpkin or two that need the double-jump chain.
+// =====================================================================
 func buildLevel2() level {
 	var g grid
 	g.ground(0, 14, groundTop)
@@ -170,91 +186,327 @@ func buildLevel2() level {
 	g.ground(44, 52, groundTop)
 	g.ground(70, 79, groundTop)
 
-	// static torii staircase rising toward the right
-	g.torii(18, 33, 3, 5)
-	g.torii(36, 29, 3, 6)
-	g.torii(58, 31, 4, 6)
+	g.torii(18, 33, 3)
+	g.torii(36, 31, 4)
+	g.torii(58, 32, 4)
 	g.block3x3(48, 35)
 
-	// pumpkins: some on ground, some up on torii reached via platforms
 	g.pumpkin(5, groundTop-1)
-	g.pumpkin(19, 32)  // on a torii
-	g.pumpkin(37, 28)  // higher torii
+	g.pumpkin(19, 32)  // on the low torii (reached off the bridge platform)
+	g.pumpkin(37, 30)  // high torii top — needs a double-jump chain
 	g.pumpkin(49, 34)  // on the block
 	g.pumpkin(74, groundTop-1)
 
-	// enemies guarding two segments
 	g.enemy(26, groundTop-1)
 	g.enemy(46, groundTop-1)
-
 	g.barrel(12, groundTop-1)
 
 	plats := []platDef{
-		// horizontal bridge across the first big gap
 		{x: px(16), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 112, speed: 0.7},
-		// vertical lift up to the high torii
 		{x: px(34), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 144, speed: 0.8},
-		// horizontal carry over the final gap
 		{x: px(54), y: px(groundTop - 2), w: 48, h: 16, axis: "x", rng: 200, speed: 0.8},
 	}
 	return level{name: "level2", g: g, plats: plats, spawnX: px(2), spawnY: px(groundTop - 4)}
 }
 
-// ---------------------------------------------------------------------------
-// Level 3 — "Skyline Sprint": hard. Sparse ground, lots of moving platforms
-// (faster), pumpkins out over the void and up high, several enemies.
-// ---------------------------------------------------------------------------
+// =====================================================================
+// Level 3 — "Skyline Sprint": hard, and introduces the pushable boulder.
+// Sparse ground, fast platforms, double-jump pumpkins, and one pumpkin you
+// reach by pushing a boulder into a gap to make a step.
+// =====================================================================
 func buildLevel3() level {
 	var g grid
-	g.ground(0, 8, groundTop)
+	g.ground(0, 10, groundTop)
 	g.ground(20, 26, groundTop)
-	g.ground(40, 45, groundTop)
+	g.ground(40, 47, groundTop)
 	g.ground(74, 79, groundTop)
 
-	// high torii skyline
-	g.torii(12, 28, 3, 8)
-	g.torii(30, 24, 3, 9)
-	g.torii(52, 27, 4, 8)
-	g.torii(64, 22, 3, 10)
+	g.torii(14, 30, 3)
+	g.torii(30, 28, 3)
+	g.torii(52, 29, 4)
+	g.torii(64, 27, 3)
 
-	// pumpkins demanding platform rides and good jumps
 	g.pumpkin(4, groundTop-1)
-	g.pumpkin(31, 23)  // top of a high torii
-	g.pumpkin(42, groundTop-1)
-	g.pumpkin(53, 26)  // on a torii over the void
-	g.pumpkin(65, 21)  // highest torii
+	g.pumpkin(31, 27) // torii top — double-jump chain
+	g.pumpkin(53, 28) // torii over the void
 
-	// several enemies
+	// boulder puzzle: this pumpkin sits 7 tiles up over the flat island. From the
+	// ground only a frame-perfect apex grab reaches it; push the boulder beneath
+	// it and stand on the boulder, and the grab becomes comfortable. The boulder
+	// is the intended route, an expert can skip it (so there's no soft-lock risk).
+	g.boulder(41, groundTop-1)
+	g.pumpkin(45, groundTop-7)
+
 	g.enemy(22, groundTop-1)
-	g.enemy(41, groundTop-1)
 	g.enemy(75, groundTop-1)
 
 	plats := []platDef{
-		{x: px(10), y: px(groundTop - 4), w: 32, h: 16, axis: "x", rng: 140, speed: 0.95},
-		{x: px(28), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 200, speed: 1.0},
-		{x: px(46), y: px(groundTop - 6), w: 32, h: 16, axis: "x", rng: 180, speed: 0.95},
-		{x: px(60), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 240, speed: 1.0},
+		{x: px(11), y: px(groundTop - 4), w: 32, h: 16, axis: "x", rng: 120, speed: 0.95},
+		{x: px(28), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 176, speed: 1.0},
+		{x: px(48), y: px(groundTop - 5), w: 32, h: 16, axis: "x", rng: 150, speed: 0.95},
+		{x: px(60), y: px(groundTop - 2), w: 32, h: 16, axis: "y", rng: 192, speed: 1.0},
 	}
-	return level{name: "level3", g: g, plats: plats, spawnX: px(2), spawnY: px(groundTop - 4)}
+	return level{
+		name: "level3", g: g, plats: plats,
+		spawnX: px(2), spawnY: px(groundTop - 4),
+	}
 }
 
-// ---- Tiled JSON output structs ----
+// ====================== reachability solver ======================
+//
+// Models standable surfaces as horizontal "strips" (static ground tops, the
+// swept span of a horizontal platform, or the sampled heights of a vertical
+// lift). It flood-fills which strips the giraffe can reach from spawn by
+// walking, falling, and jumping (simulating the real arc), then checks every
+// pumpkin against the arcs. Two passes: normal jumps only, then with the
+// boosted double-jump too — a pumpkin only the second pass reaches needs the
+// chain; one neither reaches is impossible.
+
+type strip struct {
+	y, x0, x1 float64
+	group     int // -1 static; >=0 = platform index (same group = ride-connected)
+}
+
+type solver struct {
+	solid   [H][W]bool
+	strips  []strip
+	pumps   [][2]int // col,row of each pumpkin
+}
+
+func newSolver(l level) *solver {
+	s := &solver{}
+	for r := 0; r < H; r++ {
+		for c := 0; c < W; c++ {
+			s.solid[r][c] = isSolid(l.g[r][c])
+			if l.g[r][c] == tPumpkin {
+				s.pumps = append(s.pumps, [2]int{c, r})
+			}
+		}
+	}
+	// static strips: runs of standable tiles (solid with empty above)
+	for r := 0; r < H; r++ {
+		c := 0
+		for c < W {
+			if s.solid[r][c] && (r == 0 || !s.solid[r-1][c]) {
+				start := c
+				for c < W && s.solid[r][c] && (r == 0 || !s.solid[r-1][c]) {
+					c++
+				}
+				s.strips = append(s.strips, strip{y: float64(r * tileSize),
+					x0: float64(start * tileSize), x1: float64(c * tileSize), group: -1})
+			} else {
+				c++
+			}
+		}
+	}
+	// platform strips
+	for i, p := range l.plats {
+		if p.axis == "y" {
+			for yy := p.y; yy <= p.y+int(p.rng); yy += tileSize {
+				s.strips = append(s.strips, strip{y: float64(yy),
+					x0: float64(p.x), x1: float64(p.x + p.w), group: i})
+			}
+		} else {
+			s.strips = append(s.strips, strip{y: float64(p.y),
+				x0: float64(p.x), x1: float64(p.x) + p.rng + float64(p.w), group: i})
+		}
+	}
+	return s
+}
+
+func (s *solver) solidPx(x, y float64) bool {
+	c, r := int(x)/tileSize, int(y)/tileSize
+	if r < 0 || r >= H || c < 0 || c >= W {
+		return false
+	}
+	return s.solid[r][c]
+}
+
+// reach flood-fills reachable strips and returns which pumpkins were touched.
+// allowBoost adds the stronger chained jump to the move set.
+func (s *solver) reach(spawnX, spawnY int, allowBoost bool) (reachedPump map[int]bool) {
+	reachedPump = map[int]bool{}
+
+	// seed: the strip the player falls onto from spawn
+	seed := -1
+	bestY := 1e9
+	for i, st := range s.strips {
+		if float64(spawnX)+8 >= st.x0 && float64(spawnX)+8 <= st.x1 && st.y >= float64(spawnY) {
+			if st.y < bestY {
+				bestY, seed = st.y, i
+			}
+		}
+	}
+	if seed < 0 {
+		return
+	}
+
+	visited := make([]bool, len(s.strips))
+	queue := []int{seed}
+	visited[seed] = true
+
+	vys := []float64{0, jumpV}
+	if allowBoost {
+		vys = append(vys, boostV)
+	}
+	vxs := []float64{-sprintSpd, -walkSpd, 0, walkSpd, sprintSpd}
+
+	for len(queue) > 0 {
+		idx := queue[0]
+		queue = queue[1:]
+		src := s.strips[idx]
+
+		// ride-connected strips (same platform group)
+		if src.group >= 0 {
+			for j, st := range s.strips {
+				if !visited[j] && st.group == src.group {
+					visited[j] = true
+					queue = append(queue, j)
+				}
+			}
+		}
+		// walk-connected strips (same height, touching/overlapping x)
+		for j, st := range s.strips {
+			if visited[j] || absf(st.y-src.y) > 2 {
+				continue
+			}
+			if st.x0 <= src.x1+6 && st.x1 >= src.x0-6 {
+				visited[j] = true
+				queue = append(queue, j)
+			}
+		}
+		// jumps and falls from sampled launch points along the strip
+		launch := []float64{src.x0 + 1, (src.x0 + src.x1) / 2, src.x1 - 17}
+		for _, lx := range launch {
+			for _, vy0 := range vys {
+				for _, vx := range vxs {
+					land := s.arc(lx, src.y-tileSize, vx, vy0, idx, reachedPump)
+					if land >= 0 && !visited[land] {
+						visited[land] = true
+						queue = append(queue, land)
+					}
+				}
+			}
+		}
+		// pumpkins sitting on this very strip (walk-over pickup)
+		for pi, pk := range s.pumps {
+			py := float64(pk[1] * tileSize)
+			pxw := float64(pk[0] * tileSize)
+			if pxw+8 >= src.x0 && pxw+8 <= src.x1 && absf(py+tileSize-src.y) <= tileSize {
+				reachedPump[pi] = true
+			}
+		}
+	}
+	return
+}
+
+// arc simulates one jump/fall and returns the strip index landed on (or -1).
+// Pumpkins the arc passes through are recorded in reached.
+func (s *solver) arc(sx, sy, vx, vy0 float64, srcIdx int, reached map[int]bool) int {
+	x, y, vy := sx, sy, vy0
+	for f := 0; f < 160; f++ {
+		vy += gravity
+		if vy > termVy {
+			vy = termVy
+		}
+		// horizontal step (stop at walls)
+		nx := x + vx
+		edge := nx
+		if vx > 0 {
+			edge = nx + tileSize - 1
+		}
+		if !s.solidPx(edge, y+8) {
+			x = nx
+		}
+		// vertical step
+		ny := y + vy
+		if vy < 0 && s.solidPx(x+8, ny) { // head bonk
+			vy, ny = 0, y
+		}
+		prevFeet := y + tileSize
+		y = ny
+		feet := y + tileSize
+
+		// pumpkin overlap
+		for pi, pk := range s.pumps {
+			pxw, py := float64(pk[0]*tileSize), float64(pk[1]*tileSize)
+			if x+tileSize > pxw && x < pxw+tileSize && y+tileSize > py && y < py+tileSize {
+				reached[pi] = true
+			}
+		}
+		// landing on a strip (descending, feet crossing strip y)
+		if vy >= 0 && f > 2 {
+			for k, st := range s.strips {
+				if k == srcIdx {
+					continue
+				}
+				if x+8 >= st.x0 && x+8 <= st.x1 && prevFeet <= st.y+2 && feet >= st.y {
+					return k
+				}
+			}
+		}
+		if x < 0 || x+tileSize > W*tileSize || y > H*tileSize {
+			return -1
+		}
+	}
+	return -1
+}
+
+// validate runs both passes and prints a per-pumpkin report. Returns false if
+// any non-exempt pumpkin is impossible.
+func (s *solver) validate(l level) bool {
+	norm := s.reach(l.spawnX, l.spawnY, false)
+	boost := s.reach(l.spawnX, l.spawnY, true)
+	ok := true
+	for pi, pk := range s.pumps {
+		key := fmt.Sprintf("%d,%d", pk[0], pk[1])
+		switch {
+		case norm[pi]:
+			fmt.Printf("    pumpkin (%2d,%2d): reachable (normal jump)\n", pk[0], pk[1])
+		case boost[pi]:
+			fmt.Printf("    pumpkin (%2d,%2d): reachable (DOUBLE-JUMP CHAIN)\n", pk[0], pk[1])
+		case l.exemptPumpkins[key]:
+			fmt.Printf("    pumpkin (%2d,%2d): exempt (boulder puzzle)\n", pk[0], pk[1])
+		default:
+			fmt.Printf("    pumpkin (%2d,%2d): !!! IMPOSSIBLE !!!\n", pk[0], pk[1])
+			ok = false
+		}
+	}
+	return ok
+}
+
+func isSolid(id int) bool {
+	switch id {
+	case 10, 11, 27, 33, 37, 38, 39, 47, 49, 50, 51, 84, 90:
+		return true
+	}
+	return false
+}
+
+func absf(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// ---- Tiled JSON output ----
 
 type tmap struct {
-	Height      int        `json:"height"`
-	Width       int        `json:"width"`
-	TileWidth   int        `json:"tilewidth"`
-	TileHeight  int        `json:"tileheight"`
-	Infinite    bool       `json:"infinite"`
-	Orientation string     `json:"orientation"`
-	RenderOrder string     `json:"renderorder"`
-	Type        string     `json:"type"`
-	Version     string     `json:"version"`
-	TiledVer    string     `json:"tiledversion"`
-	NextLayerID int        `json:"nextlayerid"`
-	NextObjID   int        `json:"nextobjectid"`
-	Tilesets    []tset     `json:"tilesets"`
-	Layers      []tlayer   `json:"layers"`
+	Height      int      `json:"height"`
+	Width       int      `json:"width"`
+	TileWidth   int      `json:"tilewidth"`
+	TileHeight  int      `json:"tileheight"`
+	Infinite    bool     `json:"infinite"`
+	Orientation string   `json:"orientation"`
+	RenderOrder string   `json:"renderorder"`
+	Type        string   `json:"type"`
+	Version     string   `json:"version"`
+	TiledVer    string   `json:"tiledversion"`
+	NextLayerID int      `json:"nextlayerid"`
+	NextObjID   int      `json:"nextobjectid"`
+	Tilesets    []tset   `json:"tilesets"`
+	Layers      []tlayer `json:"layers"`
 }
 
 type tset struct {
@@ -263,20 +515,20 @@ type tset struct {
 }
 
 type tlayer struct {
-	ID          int      `json:"id"`
-	Type        string   `json:"type"`
-	Name        string   `json:"name"`
-	Opacity     float64  `json:"opacity"`
-	Visible     bool     `json:"visible"`
-	X           int      `json:"x"`
-	Y           int      `json:"y"`
-	Width       int      `json:"width,omitempty"`
-	Height      int      `json:"height,omitempty"`
-	Data        []int    `json:"data,omitempty"`
-	Image       string   `json:"image,omitempty"`
-	ImageWidth  int      `json:"imagewidth,omitempty"`
-	ImageHeight int      `json:"imageheight,omitempty"`
-	Objects     []tobj   `json:"objects,omitempty"`
+	ID          int     `json:"id"`
+	Type        string  `json:"type"`
+	Name        string  `json:"name"`
+	Opacity     float64 `json:"opacity"`
+	Visible     bool    `json:"visible"`
+	X           int     `json:"x"`
+	Y           int     `json:"y"`
+	Width       int     `json:"width,omitempty"`
+	Height      int     `json:"height,omitempty"`
+	Data        []int   `json:"data,omitempty"`
+	Image       string  `json:"image,omitempty"`
+	ImageWidth  int     `json:"imagewidth,omitempty"`
+	ImageHeight int     `json:"imageheight,omitempty"`
+	Objects     []tobj  `json:"objects,omitempty"`
 }
 
 type tobj struct {
@@ -297,15 +549,12 @@ type tprop struct {
 }
 
 func (l level) toTiledJSON() tmap {
-	// flatten grid to row-major data
 	data := make([]int, 0, W*H)
 	for r := 0; r < H; r++ {
 		for c := 0; c < W; c++ {
 			data = append(data, l.g[r][c])
 		}
 	}
-
-	// object layer: spawn point + moving platforms
 	objs := []tobj{{ID: 1, Name: "spawn", X: l.spawnX, Y: l.spawnY, Point: true}}
 	for i, p := range l.plats {
 		objs = append(objs, tobj{
@@ -317,7 +566,6 @@ func (l level) toTiledJSON() tmap {
 			},
 		})
 	}
-
 	return tmap{
 		Height: H, Width: W, TileWidth: tileSize, TileHeight: tileSize,
 		Infinite: false, Orientation: "orthogonal", RenderOrder: "right-down",
@@ -349,33 +597,25 @@ func fillRect(dst *image.RGBA, x, y, w, h int, c image.Image) {
 	draw.Draw(dst, image.Rect(x, y, x+w, y+h), c, image.Point{}, draw.Over)
 }
 
-// renderPreview composites the level onto a 1280x720 image using the real
-// tileset, then overlays moving platforms (yellow tint), enemy spawns (red),
-// and the player spawn (cyan).
 func renderPreview(l level, tileset, bg image.Image, outPath string) error {
 	dst := image.NewRGBA(image.Rect(0, 0, W*tileSize, H*tileSize))
 	if bg != nil {
 		draw.Draw(dst, dst.Bounds(), bg, bg.Bounds().Min, draw.Src)
 	}
-
 	blit := func(id, col, row int) {
 		if id <= 0 {
 			return
 		}
 		idx := id - 1
-		sx := (idx % 6) * tileSize
-		sy := (idx / 6) * tileSize
+		sx, sy := (idx%6)*tileSize, (idx/6)*tileSize
 		dr := image.Rect(col*tileSize, row*tileSize, col*tileSize+tileSize, row*tileSize+tileSize)
 		draw.Draw(dst, dr, tileset, image.Pt(sx, sy), draw.Over)
 	}
-
 	for r := 0; r < H; r++ {
 		for c := 0; c < W; c++ {
 			blit(l.g[r][c], c, r)
 		}
 	}
-
-	// markers
 	red := image.NewUniform(color.RGBA{220, 40, 40, 200})
 	cyan := image.NewUniform(color.RGBA{40, 220, 220, 220})
 	yellow := image.NewUniform(color.RGBA{240, 220, 60, 120})
@@ -386,16 +626,16 @@ func renderPreview(l level, tileset, bg image.Image, outPath string) error {
 			}
 		}
 	}
+	// moving platforms with clean tiles + a tint
 	for _, p := range l.plats {
-		// draw the platform tiles at its start position, then a translucent tint
 		cols := p.w / tileSize
 		row := p.y / tileSize
 		for i := 0; i < cols; i++ {
-			id := tBeamM
+			id := 33
 			if cols > 1 && i == 0 {
-				id = tBeamL
+				id = 31
 			} else if cols > 1 && i == cols-1 {
-				id = tBeamR
+				id = 35
 			}
 			blit(id, p.x/tileSize+i, row)
 		}
@@ -420,34 +660,31 @@ func main() {
 		fmt.Println("tileset:", err)
 		os.Exit(1)
 	}
-	bg, err := loadPNG("levels/night_background.png")
-	if err != nil {
-		fmt.Println("bg (continuing without):", err)
-		bg = nil
-	}
+	bg, _ := loadPNG("levels/night_background.png")
 
 	levels := []level{buildLevel1(), buildLevel2(), buildLevel3()}
+	allOK := true
 	for _, l := range levels {
-		// write JSON
 		m := l.toTiledJSON()
-		b, err := json.MarshalIndent(m, "", " ")
-		if err != nil {
-			fmt.Println("marshal:", err)
-			os.Exit(1)
-		}
+		b, _ := json.MarshalIndent(m, "", " ")
 		jsonPath := filepath.Join("levels", l.name+".json")
 		if err := os.WriteFile(jsonPath, b, 0o644); err != nil {
 			fmt.Println("write json:", err)
 			os.Exit(1)
 		}
-		fmt.Println("wrote", jsonPath)
-
-		// render preview
 		prev := filepath.Join("tools", "genlevels", "preview", l.name+".png")
 		if err := renderPreview(l, tileset, bg, prev); err != nil {
 			fmt.Println("preview:", err)
 			os.Exit(1)
 		}
-		fmt.Println("wrote", prev)
+		fmt.Printf("%s -> %s, %s\n", l.name, jsonPath, prev)
+		if !newSolver(l).validate(l) {
+			allOK = false
+		}
 	}
+	if !allOK {
+		fmt.Println("\nFAIL: at least one pumpkin is unreachable")
+		os.Exit(1)
+	}
+	fmt.Println("\nOK: every pumpkin is reachable")
 }

@@ -11,6 +11,8 @@
 
 # Level-generator preview renders (regenerate with: go run ./tools/genlevels)
 /tools/genlevels/preview/
+# Tile-inspector output (regenerate with: go run ./tools/tileinspect)
+/tools/tileinspect/tileset_labeled.png
 
 # NOTE: go.mod and go.sum are committed on purpose — a cloner needs them to build.
 

@@ -31,8 +31,10 @@ func (ps *PumpkinSystem) Update(g *Game) {
 			alive++
 		}
 	}
-	// If no enemies remain and we haven't dropped the first pumpkin yet:
-	if alive == 0 && !g.initialPumpkinDropped {
+	// If no enemies remain and we haven't dropped the first pumpkin yet.
+	// Only the original level (index 0) uses the falling-pumpkin drop; the
+	// new levels are built around placed pumpkins only.
+	if game.CurrentLevel == 0 && alive == 0 && !g.initialPumpkinDropped {
 		// Spawn at a fixed position (x=390, y=0).
 		g.spawnPumpkinAt(390, 0)
 		g.initialPumpkinDropped = true

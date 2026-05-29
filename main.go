@@ -344,9 +344,12 @@ func (g *Game) Update() error {
 	g.pumpkinSystem.Update(g)
 
 	// 4a2) Advance moving platforms before the player so a riding player is carried
-	// using this frame's fresh platform movement.
+	// using this frame's fresh platform movement, and let boulders fall.
 	for _, mp := range game.Levels[game.CurrentLevel].Platforms {
 		mp.Update()
+	}
+	for _, b := range game.Levels[game.CurrentLevel].Boulders {
+		b.Update()
 	}
 
 	// 4b) Update the player: movement, gravity, collisions, and animation
@@ -535,9 +538,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// 2) Draw the level (tiles, background, etc.) into the buffer
 	game.DrawLevel(g.buffer, g.CameraX, g.CameraY)
 
-	// 2.5) Draw moving platforms behind the player, so the giraffe stands on top
+	// 2.5) Draw moving platforms and boulders behind the player
 	for _, mp := range game.Levels[game.CurrentLevel].Platforms {
 		mp.Draw(g.buffer, g.CameraX, g.CameraY)
+	}
+	for _, b := range game.Levels[game.CurrentLevel].Boulders {
+		b.Draw(g.buffer, g.CameraX, g.CameraY)
 	}
 
 	// 3) Draw the player sprite at its world position offset by the camera

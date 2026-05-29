@@ -305,6 +305,21 @@ func (p *Player) Update(
 					break
 				}
 			}
+			// also land on the top of any boulder
+			if !p.OnGround {
+				for _, b := range Levels[CurrentLevel].Boulders {
+					if cx < b.X || cx > b.X+b.W {
+						continue
+					}
+					top := b.Y
+					if prevFeet <= top+2 && feet >= top {
+						p.Y = top - p.Height
+						p.VelY = 0
+						p.OnGround = true
+						break
+					}
+				}
+			}
 		}
 	}
 
@@ -321,6 +336,25 @@ func (p *Player) Update(
 	if isFloor(tx, headRow) {
 		p.Y = float64(headRow+1) * ts
 		p.VelY = 0
+	}
+
+	// Moving-platform underside: bonk the head when jumping up into a platform,
+	// so platforms are solid both ways (you can't pass up through them).
+	if p.VelY < 0 {
+		head := p.Y
+		prevHead := head - p.VelY // head was lower last frame (VelY is negative)
+		cx := p.X + p.Width/2
+		for _, mp := range Levels[CurrentLevel].Platforms {
+			if cx < mp.X || cx > mp.X+mp.W {
+				continue
+			}
+			bottom := mp.Y + mp.H
+			if head < bottom && prevHead >= bottom {
+				p.Y = bottom
+				p.VelY = 0
+				break
+			}
+		}
 	}
 
 	// Horizontal movement and wall collision
@@ -340,6 +374,8 @@ func (p *Player) Update(
 		// In the air, allow horizontal velocity unimpeded
 		p.VelX = intendedVX
 	}
+	// Push any boulder we'd walk into (and stop if it can't move)
+	p.VelX = p.resolveBoulders(p.VelX)
 	p.X += p.VelX
 
 	// Pumpkin collection: iterate over all tiles overlapping the player's bounding box
@@ -413,6 +449,32 @@ func (p *Player) Update(
 
 // Collision and helper utilities for detecting solid tiles, doing simple bounding-box checks,
 // and exposing player state (facing direction, interaction flag).
+
+// resolveBoulders pushes any boulder the player walks into and returns the
+// horizontal distance the player is actually allowed to move: the full amount
+// if there's no boulder (or it gets pushed), or 0 if a boulder blocks the way.
+// Standing on top of a boulder is not a push (handled by the landing check).
+func (p *Player) resolveBoulders(dx float64) float64 {
+	if dx == 0 {
+		return 0
+	}
+	for _, b := range Levels[CurrentLevel].Boulders {
+		// require vertical overlap with the boulder's side, not its top
+		if p.Y+p.Height <= b.Y+1 || p.Y >= b.Y+b.H {
+			continue
+		}
+		hitRight := dx > 0 && p.X+p.Width <= b.X && p.X+p.Width+dx > b.X
+		hitLeft := dx < 0 && p.X >= b.X+b.W && p.X+dx < b.X+b.W
+		if hitRight || hitLeft {
+			if b.CanMove(dx) {
+				b.X += dx
+				return dx
+			}
+			return 0 // boulder is wedged; player stops
+		}
+	}
+	return dx
+}
 
 // isWall returns true if the tile at (tx, ty) is one of the solid “wall” tiles
 // that should stop horizontal movement or block passage.

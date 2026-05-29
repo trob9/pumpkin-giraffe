@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	TileSize     = 16 // size of each square tile in pixels
-	EnemySpawnID = 72 // special tile ID reserved for enemy spawn points
+	TileSize      = 16 // size of each square tile in pixels
+	EnemySpawnID  = 72 // special tile ID reserved for enemy spawn points
+	BoulderSpawnID = 71 // tile ID that spawns a pushable boulder, then is cleared
 )
 
 // Level represents a single game map: a grid of tile IDs, an optional
@@ -23,6 +24,7 @@ type Level struct {
 	Bg        *ebiten.Image     // optional fullscreen background graphic
 	Enemies   []*Enemy          // active enemies for this level
 	Platforms []*MovingPlatform // moving platforms read from the map's object layer
+	Boulders  []*Boulder        // pushable boulders placed via BoulderSpawnID tiles
 	SpawnX    float64           // player start X in world pixels (0 = use default)
 	SpawnY    float64           // player start Y in world pixels (0 = use default)
 }

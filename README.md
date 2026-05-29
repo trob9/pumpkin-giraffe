@@ -15,9 +15,10 @@ Because every pumpkin is mandatory, the route *is* the puzzle: the fastest path 
 Everything is built around shaving frames off that route:
 
 - **Sprint** (hold Shift) multiplies your speed by 2.5×. You'll want it held basically the whole run, but it makes platforms and pits far less forgiving — the classic speedrun trade of control for pace.
-- **Moving platforms** slide back and forth on fixed paths. They bridge gaps and lift you to high pumpkins, but they only go as fast as they go — mistime your hop and you wait, or fall. Riding them well is most of the time save on the later maps.
+- **Moving platforms** slide back and forth on fixed paths, horizontal or vertical. They bridge gaps and lift you to high pumpkins, but they only go as fast as they go — mistime your hop and you wait, or fall. They're solid both ways, so you'll bonk your head jumping up into one. Riding them well is most of the time save on the later maps.
+- **Pushable boulders** (introduced on level 4) can be shoved left or right along the ground. Line one up under an out-of-reach pumpkin and use it as a step, or push it where you need it — it's the puzzle element.
 - **Skull enemies** patrol the platforms. Touch one from the side and you die and respawn — a death is a run-killer. Land on their heads, though, and you stomp them and bounce.
-- **Pumpkins** are the goal, not a detour: five per level, scattered on ground, ledges, and out over the void where only a platform ride will reach them.
+- **Pumpkins** are the goal, not a detour: five per level, scattered on ground, ledges, and out over the void where only a platform ride — or a well-timed double-jump chain — will reach them.
 
 ## The four levels
 
@@ -26,7 +27,7 @@ The original map first, then three new ones on a gentle difficulty ramp:
 1. **Pumpkin Patch** — the original level.
 2. **Rolling Start** — gentle intro: mostly solid ground, two slow platforms bridging small gaps.
 3. **Gap Gauntlet** — more gaps, a vertical lift, a torii staircase, pumpkins that need a platform ride.
-4. **Skyline Sprint** — sparse ground, fast platforms, pumpkins out over the void and up on the high torii.
+4. **Skyline Sprint** — sparse ground, fast platforms, pumpkins out over the void and up on the high torii, and the pushable boulder.
 
 ## Controls
 

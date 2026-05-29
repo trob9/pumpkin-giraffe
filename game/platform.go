@@ -9,12 +9,13 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
-// Tile IDs used to draw a moving platform, matching the static-map grammar:
-// a left cap, a repeated middle span, and a right cap.
+// Tile IDs used to draw a moving platform. These are the clean, stub-free wood
+// platform tiles (31/32-34/35) — unlike 37/39/38, they have no pillar-connection
+// stub hanging beneath, so a free-floating platform doesn't look broken.
 const (
-	platLeftCap  = 37
-	platMid      = 39
-	platRightCap = 38
+	platLeftCap  = 31
+	platMid      = 33
+	platRightCap = 35
 )
 
 // MovingPlatform is a one-way solid surface that ping-pongs between its origin
