@@ -182,6 +182,7 @@ type Game struct {
 	setSel                int                   // selected row on the settings screen
 	rebindAction          int                   // action being rebound (-1 = not listening)
 	lorePage              int                   // current page on the lore screen
+	story                 *game.StoryManager    // NPCs + dialogue
 }
 
 // ambientKindFor maps a level index to its time-of-day atmosphere.
@@ -302,6 +303,9 @@ func NewGame(
 		g.ui.NewMessage, // callback for any interaction text
 	)
 
+	g.story = game.NewStoryManager(Assets, hudFont)
+	g.story.SetSmallFace(interactionFont)
+
 	g.resetAmbient()
 	return g
 }
@@ -418,6 +422,15 @@ func (g *Game) Update() error {
 	}
 
 	// 4) Main gameplay updates (only when state == StatePlaying)
+
+	// 4z) Story: advance NPC dialogue. While a conversation is open the whole
+	// world freezes so the giraffe doesn't wander off mid-sentence.
+	if g.story != nil {
+		g.story.Update(game.CurrentLevel, g.player.X, g.player.Y, ebiten.IsKeyPressed(ebiten.KeyE))
+		if g.story.Active() {
+			return nil
+		}
+	}
 
 	// 4a) Update pumpkin physics, spawning, catching, and missing logic
 	g.pumpkinSystem.Update(g)
@@ -689,6 +702,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		en.Draw(g.buffer, g.CameraX, g.CameraY)
 	}
 
+	// 4.5) Draw NPCs in the world (markers, bob, "press E" prompt).
+	if g.story != nil {
+		g.story.DrawWorld(g.buffer, game.CurrentLevel, g.CameraX, g.CameraY)
+	}
+
 	// 5) Draw all alive pumpkins
 	for _, p := range g.pumpkins {
 		if !p.Alive {
@@ -753,6 +771,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	tb := text.BoundString(hudFont, timerStr)
 	x := (WindowWidth - tb.Dx()) / 2
 	text.Draw(screen, timerStr, hudFont, x, 32, color.White)
+
+	// 10) Dialogue box overlay (full-screen UI), drawn last so it sits on top.
+	if g.story != nil {
+		g.story.DrawUI(screen)
+	}
 }
 
 // Layout tells Ebiten how large the game’s logical screen should be.
