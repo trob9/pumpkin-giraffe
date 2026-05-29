@@ -9,9 +9,7 @@
 # Ebiten/audio caches
 *.wav.cache
 
-# Go modules
-/go.sum
-/go.mod
+# NOTE: go.mod and go.sum are committed on purpose — a cloner needs them to build.
 
 # Editor & OS
 .DS_Store
