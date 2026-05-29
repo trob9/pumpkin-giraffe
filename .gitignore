@@ -26,3 +26,7 @@ Thumbs.db
 
 # Claude Code worktrees / local state
 .claude/
+
+# overnight throwaway dev tools
+/tools/spritedump/
+/tools/neckpreview/

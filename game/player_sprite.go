@@ -70,7 +70,16 @@ func (p *Player) Draw(screen *ebiten.Image, camX, camY float64) {
 	//    the full sprite here, or its original head would show at the shoulders.
 	//    When retracted, draw normally.
 	if p.neck.Active() {
-		p.neck.Draw(screen, img, p.X-camX, p.Y-camY)
+		// While the neck is extended, render the body from the IDLE frame rather
+		// than the chosen pose. The jump pose tucks the eyes down into rows 4-5
+		// where the raised arms also live, so no clean head split exists for it;
+		// the idle frame keeps the whole head (eyes included) in the top 7 rows
+		// with the arms down, which slices cleanly and is symmetric across facings.
+		neckBody := p.idleR[0]
+		if !p.facingRight {
+			neckBody = p.idleL[0]
+		}
+		p.neck.Draw(screen, neckBody, 7, p.X-camX, p.Y-camY)
 	} else {
 		screen.DrawImage(img, op)
 	}

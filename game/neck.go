@@ -262,46 +262,33 @@ func (n *Neck) runHoist(p *Player) {
 // so there is no original head left at the shoulders to mask — the old
 // full-width mask (which showed as two boxes either side of the neck) is gone.
 //
-//	bodyImg — the current sprite frame (idle/walk/jump). We slice it using the
-//	          frame's OWN bounds origin, so walk frames (which live at x-offsets
-//	          inside their sheet) slice correctly instead of coming out empty.
-//	px, py  — the body's screen-space top-left (already camera-adjusted).
-//
-// Only the HEAD (centre columns of the top rows) is lifted onto the neck; the
-// side columns of those rows stay with the body. That matters for the jump pose,
-// where the arms are raised up beside the head sharing the same rows — a plain
-// row split would drag the arm-tops up next to the lifted head. By keeping the
-// side columns down, the arms stay attached to the body and reach up as normal.
-func (n *Neck) Draw(screen *ebiten.Image, bodyImg *ebiten.Image, px, py float64) {
+//	bodyImg  — the current sprite frame (idle/walk/jump).
+//	headRows — how many top rows of THIS frame are the head. Differs by pose: in
+//	           idle/walk the head fills the top 7 rows; in the jump pose the arms
+//	           are raised into rows 4+, so only rows 0-3 are head. A full-width
+//	           row slice at the right height is clean for both facings (no left/
+//	           right column asymmetry) and never lifts the arms.
+//	px, py   — the body's screen-space top-left (already camera-adjusted). We
+//	           slice with the frame's OWN bounds origin so walk frames (which live
+//	           at x-offsets in their sheet) slice correctly instead of empty.
+func (n *Neck) Draw(screen *ebiten.Image, bodyImg *ebiten.Image, headRows int, px, py float64) {
 	if n.length <= 0.01 {
 		return
 	}
 	b := bodyImg.Bounds()
 	mnx, mny := b.Min.X, b.Min.Y
+	h := float64(headRows)
 
-	// Head region: centre columns [headColL,headColR), top headRows rows. Chosen
-	// to cover the ears+face in every pose while excluding the arm columns.
-	const headRows = neckHeadRows
-	const headColL = 3
-	const headColR = 13
-
-	part := func(sx0, sy0, sx1, sy1 int, dx, dy float64) {
-		sub := bodyImg.SubImage(image.Rect(mnx+sx0, mny+sy0, mnx+sx1, mny+sy1)).(*ebiten.Image)
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Translate(dx, dy)
-		screen.DrawImage(sub, op)
-	}
-
-	// 1) Body = the whole frame MINUS the head rect, drawn in place: the two side
-	//    columns full-height (these carry the arms), plus the centre below the head.
-	part(0, 0, headColL, 16, px, py)                                       // left strip
-	part(headColR, 0, 16, 16, px+float64(headColR), py)                    // right strip
-	part(headColL, headRows, headColR, 16, px+float64(headColL), py+float64(headRows)) // centre-below
+	// 1) Lower body (everything below the head, incl. raised arms) in place.
+	body := bodyImg.SubImage(image.Rect(mnx, mny+headRows, mnx+16, mny+16)).(*ebiten.Image)
+	opBody := &ebiten.DrawImageOptions{}
+	opBody.GeoM.Translate(px, py+h)
+	screen.DrawImage(body, opBody)
 
 	// 2) Thin neck column between the lifted head and the body's neck-base.
 	headTopY := py - n.length
-	neckTopY := headTopY + float64(headRows) - 1
-	neckBotY := py + float64(headRows) + 1
+	neckTopY := headTopY + h - 1
+	neckBotY := py + h + 1
 	if neckH := neckBotY - neckTopY; neckH > 0 {
 		pix := neckPixelImage()
 		opO := &ebiten.DrawImageOptions{}
@@ -317,6 +304,9 @@ func (n *Neck) Draw(screen *ebiten.Image, bodyImg *ebiten.Image, px, py float64)
 		screen.DrawImage(pix, opT)
 	}
 
-	// 3) The head (centre columns of the top rows) lifted up by n.length.
-	part(headColL, 0, headColR, headRows, px+float64(headColL), headTopY)
+	// 3) The head (top headRows of the current frame) lifted up by n.length.
+	head := bodyImg.SubImage(image.Rect(mnx, mny, mnx+16, mny+headRows)).(*ebiten.Image)
+	opHead := &ebiten.DrawImageOptions{}
+	opHead.GeoM.Translate(px, headTopY)
+	screen.DrawImage(head, opHead)
 }
