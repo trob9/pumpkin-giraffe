@@ -291,9 +291,17 @@ func (p *Player) Update(
 		if p.VelY >= 0 {
 			feet := p.Y + p.Height
 			prevFeet := feet - p.VelY
-			cx := p.X + p.Width/2 // land when the player's center is over the platform
+			// Land like a static ledge: register whenever the player's FOOT BOX
+			// (its full width, not just its center) overlaps the platform top.
+			// A center-only test silently dropped corner landings — your center
+			// could be just past the platform's edge while your feet still rest
+			// on it — which is why edge-of-platform double-jumps failed. Overlap
+			// the foot span [p.X, p.X+p.Width] against the platform span instead,
+			// matching how a static ledge catches you anywhere along its top.
+			left := p.X
+			right := p.X + p.Width
 			for _, mp := range Levels[CurrentLevel].Platforms {
-				if cx < mp.X || cx > mp.X+mp.W {
+				if right <= mp.X || left >= mp.X+mp.W {
 					continue
 				}
 				top := mp.Y
@@ -305,10 +313,10 @@ func (p *Player) Update(
 					break
 				}
 			}
-			// also land on the top of any boulder
+			// also land on the top of any boulder (same foot-box overlap test)
 			if !p.OnGround {
 				for _, b := range Levels[CurrentLevel].Boulders {
-					if cx < b.X || cx > b.X+b.W {
+					if right <= b.X || left >= b.X+b.W {
 						continue
 					}
 					top := b.Y
@@ -374,8 +382,10 @@ func (p *Player) Update(
 		// In the air, allow horizontal velocity unimpeded
 		p.VelX = intendedVX
 	}
-	// Push any boulder we'd walk into (and stop if it can't move)
-	p.VelX = p.resolveBoulders(p.VelX)
+	// Boulders: only push while E is held; otherwise a boulder is a solid wall.
+	// Pushing is slow and constant (sprint doesn't speed it up).
+	eHeld := ebiten.IsKeyPressed(ebiten.KeyE)
+	p.VelX = p.resolveBoulders(p.VelX, eHeld)
 	p.X += p.VelX
 
 	// Pumpkin collection: iterate over all tiles overlapping the player's bounding box
@@ -450,11 +460,24 @@ func (p *Player) Update(
 // Collision and helper utilities for detecting solid tiles, doing simple bounding-box checks,
 // and exposing player state (facing direction, interaction flag).
 
-// resolveBoulders pushes any boulder the player walks into and returns the
-// horizontal distance the player is actually allowed to move: the full amount
-// if there's no boulder (or it gets pushed), or 0 if a boulder blocks the way.
+// pushSpeed is the slow, constant horizontal speed used while shoving a boulder.
+// It is deliberately independent of walk/sprint speed so holding Shift never
+// speeds up a push.
+const pushSpeed = 0.75
+
+// resolveBoulders decides how the player interacts with any boulder they're
+// walking into this frame, returning the horizontal distance they're actually
+// allowed to move.
+//
+// Behaviour:
+//   - If E is NOT held, a boulder is a solid wall: the player stops (returns 0)
+//     and the boulder does not move.
+//   - If E IS held, the boulder is pushed at a slow constant pushSpeed (in the
+//     direction the player is moving), regardless of sprint. The player moves
+//     with it by the same slow amount. If the boulder is wedged, both stop.
+//
 // Standing on top of a boulder is not a push (handled by the landing check).
-func (p *Player) resolveBoulders(dx float64) float64 {
+func (p *Player) resolveBoulders(dx float64, eHeld bool) float64 {
 	if dx == 0 {
 		return 0
 	}
@@ -466,9 +489,18 @@ func (p *Player) resolveBoulders(dx float64) float64 {
 		hitRight := dx > 0 && p.X+p.Width <= b.X && p.X+p.Width+dx > b.X
 		hitLeft := dx < 0 && p.X >= b.X+b.W && p.X+dx < b.X+b.W
 		if hitRight || hitLeft {
-			if b.CanMove(dx) {
-				b.X += dx
-				return dx
+			if !eHeld {
+				return 0 // E not held: boulder acts as a solid wall
+			}
+			// Push at a slow constant speed in the player's facing direction,
+			// ignoring how fast they were trying to walk/sprint.
+			step := pushSpeed
+			if dx < 0 {
+				step = -pushSpeed
+			}
+			if b.CanMove(step) {
+				b.X += step
+				return step
 			}
 			return 0 // boulder is wedged; player stops
 		}
